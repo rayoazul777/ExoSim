@@ -1,0 +1,14 @@
+{
+  "name": "exosim",
+  "version": "0.1.0",
+  "dependencies": [
+    "glfw3",
+    "glm",
+    "imgui",
+    "nlohmann-json",
+    {
+      "name": "glad",
+      "features": ["loader"]
+    }
+  ]
+}
