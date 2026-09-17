@@ -73,6 +73,8 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
         p.starMassSolar = numOr(row, "st_mass", 0.0);
         p.starSpectralType = strOr(row, "st_spectype", "");
         p.numStarsInSystem = static_cast<int>(numOr(row, "sy_snum", 1.0));
+        p.galacticLatDeg = numOr(row, "glat", 0.0);
+        p.galacticLonDeg = numOr(row, "glon", 0.0);
 
         planets.push_back(std::move(p));
     }
@@ -200,6 +202,8 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
             sys.starMassSolar = planets[i].starMassSolar;
             sys.starSpectralType = planets[i].starSpectralType;
             sys.numStars = planets[i].numStarsInSystem;
+            sys.galacticLatDeg = planets[i].galacticLatDeg;
+            sys.galacticLonDeg = planets[i].galacticLonDeg;
             systems.push_back(std::move(sys));
         } else {
             it->planetIndices.push_back(i);
@@ -291,4 +295,75 @@ void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>&
     std::cout << "[Dataset] Multi-star systems with resolved companion data: "
               << systemsWithRealCompanionData << "; with unresolved companion(s): "
               << systemsWithUnresolvedCompanions << ".\n";
+}
+
+void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord>& planets) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[Dataset] No dwarf_planets.json found - Sol will only show the 8 main "
+                  << "planets (run fetch_exoplanets.py to pull real dwarf-planet data from "
+                  << "NASA/JPL's SBDB, a different NASA source from the Exoplanet Archive).\n";
+        return;
+    }
+
+    json root;
+    try {
+        file >> root;
+    } catch (const std::exception& e) {
+        std::cerr << "[Dataset] dwarf_planets.json parse error: " << e.what() << "\n";
+        return;
+    }
+
+    constexpr double kJupiterRadiusKm = 69911.0;
+    constexpr double kJupiterMassKg = 1.898e27;
+    constexpr double kGravitationalConstantKm3 = 6.674e-20; // km^3 kg^-1 s^-2
+
+    int added = 0;
+    for (const auto& row : root) {
+        double a = numOr(row, "pl_orbsmax", -1.0);
+        double per = numOr(row, "pl_orbper", -1.0);
+        if (a <= 0.0 || per <= 0.0) continue; // need both to propagate a position
+
+        PlanetRecord p;
+        p.name = strOr(row, "pl_name", "Unnamed dwarf planet");
+        p.hostStar = "Sun";
+        p.elements.semiMajorAxisAU = a;
+        p.elements.periodDays = per;
+        p.elements.eccentricity = numOr(row, "pl_orbeccen", 0.0);
+        p.elements.inclinationDeg = numOr(row, "pl_orbincl", 0.0);
+        p.elements.inclinationMeasured = row.contains("pl_orbincl") && !row["pl_orbincl"].is_null();
+        p.elements.argPeriapsisDeg = numOr(row, "pl_orblper", 0.0);
+        p.elements.longAscNodeDeg = numOr(row, "long_asc_node", 0.0);
+
+        double diameterKm = numOr(row, "diameter_km", 0.0);
+        if (diameterKm > 0.0) {
+            p.radiusJupiter = (diameterKm / 2.0) / kJupiterRadiusKm;
+        }
+
+        double gm = numOr(row, "gm", 0.0); // km^3/s^2, standard gravitational parameter
+        double massKg = 0.0;
+        if (gm > 0.0) {
+            massKg = gm / kGravitationalConstantKm3;
+            p.massJupiter = massKg / kJupiterMassKg;
+        }
+
+        if (diameterKm > 0.0 && massKg > 0.0) {
+            double radiusKm = diameterKm / 2.0;
+            double volumeKm3 = (4.0 / 3.0) * 3.14159265358979323846 * radiusKm * radiusKm * radiusKm;
+            double massGrams = massKg * 1000.0;
+            double volumeCm3 = volumeKm3 * 1.0e15; // 1 km^3 = 1e15 cm^3
+            p.densityGcm3 = massGrams / volumeCm3;
+        }
+
+        // Same star as the 8 main planets - joins the "Sun" system in GroupByHost.
+        p.starTeffK = 5778.0;
+        p.starRadiusSolar = 1.0;
+        p.starMassSolar = 1.0;
+        p.starSpectralType = "G2 V";
+
+        planets.push_back(std::move(p));
+        ++added;
+    }
+
+    std::cout << "[Dataset] Added " << added << " dwarf planet(s) from NASA/JPL SBDB.\n";
 }

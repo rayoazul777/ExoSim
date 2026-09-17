@@ -140,6 +140,12 @@ namespace {
         return it != haystack.end();
     }
 
+    float hashSeedFromString(const std::string& s) {
+        float seed = 0.0f;
+        for (char ch : s) seed += static_cast<float>(static_cast<unsigned char>(ch));
+        return seed;
+    }
+
     // NASA's Exoplanet Archive contains no confirmed exomoon detections
     // (only a small handful of disputed, unconfirmed candidates exist in
     // the literature, system-wide). So for any Archive-loaded planet, this
@@ -233,6 +239,11 @@ int main() {
         std::vector<PlanetRecord> sol = Dataset::DemoSolarSystem();
         planets.insert(planets.end(), sol.begin(), sol.end());
     }
+
+    // Real dwarf-planet data from NASA/JPL's SBDB - a different NASA
+    // source from the Exoplanet Archive above (see Dataset::LoadDwarfPlanets).
+    // Called before GroupByHost so these join the "Sun" system automatically.
+    Dataset::LoadDwarfPlanets("data/dwarf_planets.json", planets);
 
     std::vector<KeplerOrbit> orbits;
     orbits.reserve(planets.size());
@@ -452,6 +463,12 @@ int main() {
                                      0.01f, g_cam.systemDistance * 50.0f);
             glm::mat4 viewProj = proj * view;
 
+            glm::mat4 viewRotOnly = glm::mat4(glm::mat3(view));
+            glm::mat4 invViewProjRot = glm::inverse(proj * viewRotOnly);
+            renderer.renderSkybox(invViewProjRot, static_cast<float>(now),
+                static_cast<float>(currentSystem.galacticLatDeg), static_cast<float>(currentSystem.galacticLonDeg),
+                hashSeedFromString(currentSystem.hostName));
+
             std::vector<glm::vec3> positions(currentSystem.planetIndices.size());
             for (size_t local = 0; local < currentSystem.planetIndices.size(); ++local) {
                 size_t pIdx = currentSystem.planetIndices[local];
@@ -484,6 +501,13 @@ int main() {
             view = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0, 1, 0));
             proj = glm::perspective(glm::radians(45.0f), (float)g_width / (float)g_height, 0.01f, 100.0f);
             glm::mat4 viewProj = proj * view;
+
+            glm::mat4 viewRotOnly = glm::mat4(glm::mat3(view));
+            glm::mat4 invViewProjRot = glm::inverse(proj * viewRotOnly);
+            const StarSystem& detailSystem = systems[currentSystemIndex];
+            renderer.renderSkybox(invViewProjRot, static_cast<float>(now),
+                static_cast<float>(detailSystem.galacticLatDeg), static_cast<float>(detailSystem.galacticLonDeg),
+                hashSeedFromString(detailSystem.hostName));
 
             // Real axial tilt (e.g. Uranus rolling on its side) for known
             // Solar System bodies; untilted for generic exoplanets, since

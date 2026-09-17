@@ -83,6 +83,19 @@ public:
                             float innerRadius, float outerRadius,
                             const glm::vec3& color, float opacity, float seed);
 
+    // Draws a full-screen procedural background: stars, soft nebula
+    // patches, and a galactic band. Call FIRST in a scene (right after
+    // clearing, before anything else) - depth test is disabled
+    // internally so it never occludes real geometry drawn after it.
+    // `invViewProjRotationOnly` should be inverse(proj * rotation-only
+    // view) - camera TRANSLATION is deliberately excluded, so the
+    // background behaves as if infinitely far away and only changes as
+    // the camera rotates, not as it orbits around a point. galacticLat/
+    // LonDeg orient the galactic band using the current system's real
+    // galactic coordinates when known (0/0 otherwise - see Dataset.h).
+    void renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds,
+                       float galacticLatDeg, float galacticLonDeg, float seed);
+
 private:
     GLuint m_lineShader = 0;
     GLuint m_pointShader = 0;
@@ -107,9 +120,14 @@ private:
     GLsizei m_ringVertCount = 0;
     GLuint m_ringShader = 0;
 
+    // Full-screen quad for the procedural skybox background.
+    GLuint m_skyboxVao = 0, m_skyboxVbo = 0;
+    GLuint m_skyboxShader = 0;
+
     void buildSphereWireframe();
     void buildSolidSphereMesh();
     void buildRingMesh();
+    void buildSkyboxQuad();
 
     GLuint compileShader(GLenum type, const char* src);
     GLuint linkProgram(GLuint vs, GLuint fs);

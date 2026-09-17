@@ -265,6 +265,90 @@ void main() {
 }
 )";
 
+const char* kSkyboxVS = R"(
+#version 330 core
+layout(location = 0) in vec2 aPos;
+out vec2 vNdc;
+void main() {
+    vNdc = aPos;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+)";
+
+// Procedural background: sparse stars, soft nebula patches, and a
+// galactic band. Everything here is stylized (hash-based noise), not a
+// real star catalog - what IS real is the galactic band's orientation,
+// driven by the current system's actual measured galactic coordinates
+// when the Archive has them (see main.cpp / Dataset.h's galacticLat/LonDeg).
+const char* kSkyboxFS = R"(
+#version 330 core
+in vec2 vNdc;
+out vec4 FragColor;
+
+uniform mat4 uInvViewProjRot;
+uniform float uTime;
+uniform float uGalacticLatRad;
+uniform float uGalacticLonRad;
+uniform float uSeed;
+
+float hash31(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+void main() {
+    // Reconstruct a world-space ray direction from NDC, using a
+    // rotation-only inverse view-projection so the sky doesn't shift as
+    // the camera orbits around a point - only as it actually rotates.
+    vec4 nearP = uInvViewProjRot * vec4(vNdc, -1.0, 1.0);
+    vec4 farP  = uInvViewProjRot * vec4(vNdc,  1.0, 1.0);
+    nearP /= nearP.w;
+    farP  /= farP.w;
+    vec3 dir = normalize(farP.xyz - nearP.xyz);
+
+    vec3 color = vec3(0.01, 0.015, 0.026); // near-black, faint blue tint
+
+    // Stars: two sparse hash-based point layers at different densities.
+    vec3 cellA = floor(dir * 220.0);
+    float hA = hash31(cellA + uSeed);
+    if (hA > 0.9975) {
+        float brightness = fract(hA * 71.3);
+        vec3 starColor = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.85), fract(hA * 13.7));
+        color += starColor * brightness * 1.4;
+    }
+    vec3 cellB = floor(dir * 55.0);
+    float hB = hash31(cellB + uSeed * 1.7 + 91.0);
+    if (hB > 0.997) {
+        color += vec3(1.0, 0.97, 0.9) * 0.85;
+    }
+
+    // Nebula: soft colored patches via a spherical projection of the
+    // ray direction, so patches stay fixed in world space.
+    float theta = atan(dir.z, dir.x);
+    float phi = acos(clamp(dir.y, -1.0, 1.0));
+    vec2 sphUV = vec2(theta / 6.2831853 + 0.5, phi / 3.14159265);
+    float n1 = hash31(vec3(sphUV * 6.0, uSeed));
+    float n2 = hash31(vec3(sphUV * 13.0 + 3.7, uSeed * 2.1));
+    float nebula = smoothstep(0.55, 0.95, n1 * 0.6 + n2 * 0.4) * 0.16;
+    vec3 nebulaColor = mix(vec3(0.32, 0.14, 0.42), vec3(0.14, 0.22, 0.48), n2);
+    color += nebulaColor * nebula;
+
+    // Galactic band: brightest along the great circle perpendicular to
+    // the system's real galactic-plane normal.
+    vec3 galNormal = normalize(vec3(sin(uGalacticLatRad),
+                                     cos(uGalacticLatRad) * sin(uGalacticLonRad),
+                                     cos(uGalacticLatRad) * cos(uGalacticLonRad)));
+    float bandDist = abs(dot(dir, galNormal));
+    float band = 1.0 - smoothstep(0.0, 0.12, bandDist);
+    float bandNoise = hash31(dir * 30.0 + uSeed * 3.3);
+    band *= (0.7 + 0.3 * bandNoise);
+    color += vec3(0.55, 0.5, 0.6) * band * 0.5;
+
+    FragColor = vec4(color, 1.0);
+}
+)";
+
 } // namespace
 
 GLuint Renderer::compileShader(GLenum type, const char* src) {
@@ -315,17 +399,22 @@ bool Renderer::init() {
     GLuint rfs = compileShader(GL_FRAGMENT_SHADER, kRingFS);
     m_ringShader = linkProgram(rvs, rfs);
 
+    GLuint kvs = compileShader(GL_VERTEX_SHADER, kSkyboxVS);
+    GLuint kfs = compileShader(GL_FRAGMENT_SHADER, kSkyboxFS);
+    m_skyboxShader = linkProgram(kvs, kfs);
+
     glGenVertexArrays(1, &m_pointsVao);
     glGenBuffers(1, &m_pointsVbo);
 
     buildSphereWireframe();
     buildSolidSphereMesh();
     buildRingMesh();
+    buildSkyboxQuad();
 
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0;
+    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0 && m_skyboxShader != 0;
 }
 
 void Renderer::buildSphereWireframe() {
@@ -479,6 +568,25 @@ void Renderer::buildRingMesh() {
     m_ringVertCount = static_cast<GLsizei>(verts.size() / 3);
 }
 
+void Renderer::buildSkyboxQuad() {
+    float verts[] = {
+        -1.f, -1.f,
+         1.f, -1.f,
+         1.f,  1.f,
+        -1.f, -1.f,
+         1.f,  1.f,
+        -1.f,  1.f,
+    };
+    glGenVertexArrays(1, &m_skyboxVao);
+    glGenBuffers(1, &m_skyboxVbo);
+    glBindVertexArray(m_skyboxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_skyboxVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glBindVertexArray(0);
+}
+
 void Renderer::shutdown() {
     for (auto& o : m_orbits) {
         glDeleteBuffers(1, &o.vbo);
@@ -496,6 +604,9 @@ void Renderer::shutdown() {
     glDeleteVertexArrays(1, &m_ringVao);
     glDeleteProgram(m_ringShader);
     glDeleteProgram(m_surfaceShader);
+    glDeleteBuffers(1, &m_skyboxVbo);
+    glDeleteVertexArrays(1, &m_skyboxVao);
+    glDeleteProgram(m_skyboxShader);
     glDeleteProgram(m_lineShader);
     glDeleteProgram(m_pointShader);
 }
@@ -641,6 +752,22 @@ void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& mod
     glDrawArrays(GL_TRIANGLE_STRIP, 0, m_ringVertCount);
     glBindVertexArray(0);
     glDepthMask(GL_TRUE);
+}
+
+void Renderer::renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds,
+                             float galacticLatDeg, float galacticLonDeg, float seed) {
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(m_skyboxShader);
+    glUniformMatrix4fv(glGetUniformLocation(m_skyboxShader, "uInvViewProjRot"), 1, GL_FALSE, &invViewProjRotationOnly[0][0]);
+    glUniform1f(glGetUniformLocation(m_skyboxShader, "uTime"), timeSeconds);
+    glUniform1f(glGetUniformLocation(m_skyboxShader, "uGalacticLatRad"), glm::radians(galacticLatDeg));
+    glUniform1f(glGetUniformLocation(m_skyboxShader, "uGalacticLonRad"), glm::radians(galacticLonDeg));
+    glUniform1f(glGetUniformLocation(m_skyboxShader, "uSeed"), seed);
+
+    glBindVertexArray(m_skyboxVao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,

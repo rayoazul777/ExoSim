@@ -59,6 +59,15 @@ struct PlanetRecord {
     std::string starSpectralType;   // st_spectype, e.g. "G2 V" (often empty)
     int numStarsInSystem = 1;       // sy_snum (>1 = binary/multiple star system)
 
+    // Real galactic coordinates of this system, used only to orient the
+    // background skybox so it's genuinely related to where the system
+    // sits in the sky, not arbitrary decoration. 0/0 (their default) means
+    // "not measured" for a real exoplanet, or "not physically meaningful"
+    // for the Sun itself (a star's galactic coordinates describe its
+    // direction as seen from the Sun, which doesn't apply to the Sun).
+    double galacticLatDeg = 0.0;    // glat
+    double galacticLonDeg = 0.0;    // glon
+
     // Only populated for the built-in demo solar system - see MoonRecord's
     // comment above for why Archive-loaded planets don't carry real data here.
     std::vector<MoonRecord> moons;
@@ -78,6 +87,8 @@ struct StarSystem {
     double starMassSolar = 0.0;
     std::string starSpectralType;
     int numStars = 1;
+    double galacticLatDeg = 0.0;
+    double galacticLonDeg = 0.0;
 
     // Populated by LoadStellarHosts, only for systems with numStars > 1.
     // Real per-star data where the Archive has it distinguished; padded
@@ -109,5 +120,14 @@ public:
     // present. Safe to call even if the file doesn't exist - companions
     // are simply left empty (schematic rendering is skipped) in that case.
     static void LoadStellarHosts(const std::string& path, std::vector<StarSystem>& systems);
+
+    // Appends the 5 IAU-recognized dwarf planets (Ceres, Pluto, Eris,
+    // Haumea, Makemake) to `planets`, from data/dwarf_planets.json -
+    // real orbital/physical data pulled from NASA/JPL's SBDB API, a
+    // DIFFERENT official NASA source from the Exoplanet Archive used
+    // everywhere else in Dataset. Call this before GroupByHost so they
+    // get bucketed into the "Sun" system like the 8 main planets. Safe
+    // to call even if the file doesn't exist - it just adds nothing.
+    static void LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord>& planets);
 };
 

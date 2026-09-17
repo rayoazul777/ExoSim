@@ -12,19 +12,20 @@ ExoSim/
   CMakeLists.txt        - build config (CMake, works directly in VS2022)
   vcpkg.json             - dependency manifest (glfw, glm, imgui, json, glad, curl)
   data/
-    fetch_exoplanets.py  - Python fetch script (pulls real Archive data via TAP)
-    exoplanets.json       - (generated - not checked in) the fetched planet dataset
-    stellar_hosts.json    - (generated - not checked in) real per-star companion data
+    fetch_exoplanets.py  - Python fetch script (pulls real data from TWO NASA sources)
+    exoplanets.json       - (generated) planet dataset - NASA Exoplanet Archive
+    stellar_hosts.json    - (generated) companion-star data - NASA Exoplanet Archive
+    dwarf_planets.json    - (generated) Ceres/Pluto/Eris/Haumea/Makemake - NASA/JPL SBDB
   tools/
     fetch_data.cpp        - optional C++ equivalent of fetch_exoplanets.py (see below)
   src/
     main.cpp               - window/app loop, camera, ImGui HUD, view-mode switching
     KeplerOrbit.h/.cpp      - solves Kepler's equation, propagates orbit position
-    Dataset.h/.cpp          - loads exoplanets.json, groups planets into StarSystems
+    Dataset.h/.cpp          - loads all three JSON files, groups planets into StarSystems
     PlanetClassifier.h/.cpp - density/radius/mass-based composition estimates + curated real findings
     StarClassifier.h/.cpp   - spectral-type classification and color from stellar temperature
-    SolarSystemAppearance.h/.cpp - real known look (colors, rings, axial tilt) for our own 8 planets
-    Renderer.h/.cpp         - OpenGL renderer: orbits, planets, star, companions,
+    SolarSystemAppearance.h/.cpp - real known look (colors, rings, axial tilt) for known planets
+    Renderer.h/.cpp         - OpenGL renderer: skybox, orbits, planets, star, companions,
                               wireframe detail globe, procedural surface shader, rings
     CrtPostProcess.h/.cpp   - offscreen framebuffer + CRT composite pass
   shaders/
@@ -32,20 +33,34 @@ ExoSim/
 ```
 
 > **If you fetched data before this update**: re-run `fetch_exoplanets.py` -
-> it now also writes `data/stellar_hosts.json` (real companion-star data)
-> alongside `data/exoplanets.json`. The app runs fine without it - it just
-> won't render companion stars, falling back to the amber-text-only flag
-> from before.
+> it now writes `data/stellar_hosts.json` (companion stars), `data/dwarf_planets.json`
+> (Ceres/Pluto/Eris/Haumea/Makemake, from a second NASA source - see below), and
+> the main `exoplanets.json` now also carries galactic coordinates (used by the
+> background skybox). The app runs fine on an old/partial data folder - each
+> missing file just quietly disables the one feature it feeds.
 
 ## Fetching data: Python or C++
 
-`data/fetch_exoplanets.py` and `tools/fetch_data.cpp` do the exact same
-job - same TAP endpoint, same ADQL queries, same output files - pick
-whichever you'd rather run. **Neither is required by ExoSim.exe**: this is
-a one-time, offline data-prep step, and the app never invokes either
-script/tool or depends on Python being installed. The C++ version exists
-for anyone who'd rather keep the whole toolchain in one language, not
-because the Python version caused any actual problem.
+`data/fetch_exoplanets.py` and `tools/fetch_data.cpp` fetch the SAME two
+NASA sources - the Exoplanet Archive's TAP endpoint (planets, stellar
+hosts) - so pick whichever you'd rather run for those. **Neither is
+required by ExoSim.exe**: this is a one-time, offline data-prep step, and
+the app never invokes either script/tool or depends on Python being
+installed. The C++ version exists for anyone who'd rather keep the whole
+toolchain in one language, not because the Python version caused any
+actual problem.
+
+**One thing the Python script does that the C++ tool doesn't yet**: pull
+real dwarf-planet data (Ceres, Pluto, Eris, Haumea, Makemake) from
+**NASA/JPL's SBDB (Small-Body DataBase) API** - `ssd-api.jpl.nasa.gov`, a
+genuinely different, official NASA source from the Exoplanet Archive, also
+keyless. (There's a well-known community "Solar System OpenData" API that
+aggregates similar data, but it now requires an account/API key and isn't
+actually NASA-run, so it wasn't used here - SBDB fit the brief better:
+official, keyless, and it's what actually powers this data.) Porting the
+dwarf-planet fetch to the C++ tool would be a small, mechanical addition
+if you want it - the request/parse pattern is identical to the two
+queries already there, just a different endpoint and response shape.
 
 The C++ tool (`FetchData`, built alongside `ExoSim` by the same CMake
 project) also has a `--top-systems N` flag that prints the N systems with
@@ -71,14 +86,18 @@ cd ExoSim\data
 python fetch_exoplanets.py
 ```
 
-This queries the Archive's public TAP endpoint (no API key required) and
-writes `data/exoplanets.json`. Re-run it any time you want a fresh pull -
-by default it grabs every confirmed planet's "best" parameter set (~5,900+
+This queries the Exoplanet Archive's public TAP endpoint (planets, then
+stellar hosts) and NASA/JPL's SBDB (the 5 dwarf planets) - no API key
+required for either - writing `exoplanets.json`, `stellar_hosts.json`, and
+`dwarf_planets.json`. Re-run it any time you want a fresh pull - by
+default it grabs every confirmed planet's "best" parameter set (~5,900+
 rows as of 2026; not all have every field measured, and the app skips any
 planet missing the semi-major-axis + period it needs to draw an orbit).
 
-If you skip this step, ExoSim still runs - it falls back to a small
-hand-coded demo of our own solar system (`Dataset::DemoSolarSystem()`).
+If you skip this step entirely, ExoSim still runs - our own solar system
+(`Dataset::DemoSolarSystem()`) is always included regardless, so you'll
+still have something real to look at, just without the wider Archive catalog.
+
 
 ## 2. Install dependencies via vcpkg
 
@@ -120,6 +139,25 @@ up: **Project > CMake Settings** and confirm
 
 ## Controls / HUD
 
+- **Background**: both views now render a procedural skybox (sparse stars,
+  soft nebula patches, a galactic band) instead of flat black - built as a
+  full-screen shader pass using the camera's rotation only (not its
+  position), so it feels like a fixed, distant backdrop as you orbit
+  rather than a texture pasted on a sphere. The stars/nebula are stylized
+  (hash-based noise, not a real star catalog - there's no simple bulk
+  dataset of visible-sky star positions to draw from), but the galactic
+  band's *orientation* is real: it's tilted per-system using the Archive's
+  actual measured galactic latitude/longitude (`glat`/`glon`) when
+  available, so different systems in the list have a genuinely different
+  (not just randomized) backdrop orientation.
+- **Dwarf planets**: Sol's system now includes Ceres, Pluto, Eris, Haumea
+  and Makemake, with real orbital elements and (where SBDB has them)
+  physical data pulled from **NASA/JPL's SBDB API** - see "Fetching data"
+  above. Pluto and Ceres also get real known-appearance rendering (New
+  Horizons' Tombaugh Regio "heart" on Pluto, Dawn's bright Occator crater
+  spots on Ceres) via `SolarSystemAppearance`, same mechanism as the 8
+  main planets. Eris/Haumea/Makemake use the generic classifier look,
+  since no spacecraft has imaged them up close.
 - **Host star**: rendered at the system's origin as a CRT wireframe globe,
   colored by real spectral type (O/B/A/F/G/K/M, from measured effective
   temperature) and sized from its real radius. A star's true AU-scale size
@@ -263,3 +301,11 @@ up: **Project > CMake Settings** and confirm
   well-photographed real features that currently render with the same
   generic wireframe-dot look as every other moon (real or speculative) -
   a natural next enhancement using the same pattern as the planets.
+- **C++ dwarf-planet fetch**: `tools/fetch_data.cpp` doesn't yet mirror
+  the Python script's NASA/JPL SBDB query - see "Fetching data" above.
+- **Real star catalog for the skybox**: the background stars/nebula are
+  stylized noise, not real star positions - a proper starfield would need
+  a real catalog (e.g. Hipparcos/Gaia) mapped by RA/Dec, which is a much
+  bigger data-and-rendering undertaking than what's here now. The galactic
+  band's *orientation* is real (from each system's measured glat/glon);
+  the stars filling the rest of the sky are not.

@@ -65,7 +65,32 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
         a.spotLatitude = 0.45f;
         a.spotLongitude = 0.6f;
         a.axialTiltDeg = 28.3f;
+    } else if (name == "Pluto") {
+        // Imaged up close by New Horizons (2015) - real, not statistical.
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.60f, 0.46f, 0.36f);    // tan/reddish-brown terrain
+        a.secondaryColor = glm::vec3(0.40f, 0.26f, 0.20f);  // darker reddish regions (Cthulhu Macula)
+        a.hasGreatSpot = true;
+        a.spotColor = glm::vec3(0.90f, 0.86f, 0.76f);       // Tombaugh Regio, the famous bright "heart"
+        a.spotLatitude = 0.55f;
+        a.spotLongitude = 0.5f;
+        a.axialTiltDeg = 122.5f;                            // extreme tilt, similar in spirit to Uranus
+    } else if (name == "Ceres") {
+        // Imaged up close by Dawn (2015) - real, not statistical.
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.52f, 0.50f, 0.48f);    // gray, cratered
+        a.secondaryColor = glm::vec3(0.42f, 0.40f, 0.38f);
+        a.hasGreatSpot = true;
+        a.spotColor = glm::vec3(0.95f, 0.95f, 0.95f);       // the bright salt deposits in Occator crater
+        a.spotLatitude = 0.4f;
+        a.spotLongitude = 0.2f;
+        a.axialTiltDeg = 4.0f;
     }
+    // Eris, Haumea and Makemake are deliberately left unlisted (isKnown
+    // stays false): unlike Pluto and Ceres, no spacecraft has imaged them
+    // up close, so we genuinely don't have a real appearance to show -
+    // they use the honest generic classifier look instead, same as any
+    // real exoplanet.
     // Everything else (every real exoplanet, and the demo's own Sun) is
     // left as the default isKnown=false - PlanetClassifier's generic
     // procedural look applies instead.
