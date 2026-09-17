@@ -146,6 +146,64 @@ namespace {
         return seed;
     }
 
+    // Converts a real B-V color index to an approximate RGB color via
+    // piecewise linear interpolation across a handful of reference
+    // points spanning hot blue-white stars to cool red ones. This is a
+    // standard style of approximation for star-color visualization, not
+    // a precise blackbody-spectrum calculation - the INPUT (B-V) is a
+    // real measurement, the color mapping itself is an approximation.
+    glm::vec3 bvToColor(double bv) {
+        struct Anchor { float bv; glm::vec3 color; };
+        static const Anchor anchors[] = {
+            {-0.4f, glm::vec3(0.61f, 0.70f, 1.00f)}, // hot blue-white (O/B)
+            { 0.0f, glm::vec3(0.93f, 0.93f, 1.00f)}, // white (A)
+            { 0.3f, glm::vec3(1.00f, 0.96f, 0.87f)}, // yellow-white (F)
+            { 0.6f, glm::vec3(1.00f, 0.89f, 0.70f)}, // yellow, Sun-like (G)
+            { 1.0f, glm::vec3(1.00f, 0.75f, 0.48f)}, // orange (K)
+            { 1.5f, glm::vec3(1.00f, 0.58f, 0.32f)}, // orange-red (M)
+            { 2.0f, glm::vec3(1.00f, 0.45f, 0.22f)}, // deep red (cool M)
+        };
+        constexpr int n = static_cast<int>(sizeof(anchors) / sizeof(anchors[0]));
+        float b = static_cast<float>(bv);
+        if (b <= anchors[0].bv) return anchors[0].color;
+        if (b >= anchors[n - 1].bv) return anchors[n - 1].color;
+        for (int i = 0; i < n - 1; ++i) {
+            if (b >= anchors[i].bv && b <= anchors[i + 1].bv) {
+                float t = (b - anchors[i].bv) / (anchors[i + 1].bv - anchors[i].bv);
+                return glm::mix(anchors[i].color, anchors[i + 1].color, t);
+            }
+        }
+        return anchors[n - 1].color;
+    }
+
+    // Point size and brightness from real visual magnitude, using a
+    // linear-in-magnitude falloff (the conventional practical choice for
+    // star rendering - magnitude is already a log scale of true flux, so
+    // this reads as a natural brightness gradient without the extreme
+    // dynamic range true linear flux would produce). Constants are tuned
+    // by eye for a 1280x800-ish window, not derived from a physical model.
+    float vmagToPointSize(double vmag) {
+        float size = 1.0f + static_cast<float>(6.5 - vmag) * 0.9f;
+        return std::clamp(size, 1.0f, 7.0f);
+    }
+
+    float vmagToBrightness(double vmag) {
+        float b = 1.5f - static_cast<float>(vmag) * 0.15f;
+        return std::clamp(b, 0.35f, 1.6f);
+    }
+
+    // Real right ascension/declination (equatorial, ICRS/J2000-ish epoch
+    // from Hipparcos) converted to a unit direction in the app's own
+    // arbitrary world frame - y-up to match this engine's convention.
+    glm::vec3 raDecToDirection(double raDeg, double decDeg) {
+        double raRad = glm::radians(raDeg);
+        double decRad = glm::radians(decDeg);
+        double x = std::cos(decRad) * std::cos(raRad);
+        double y = std::sin(decRad);
+        double z = std::cos(decRad) * std::sin(raRad);
+        return glm::normalize(glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)));
+    }
+
     // NASA's Exoplanet Archive contains no confirmed exomoon detections
     // (only a small handful of disputed, unconfirmed candidates exist in
     // the literature, system-wide). So for any Archive-loaded planet, this
@@ -260,6 +318,26 @@ int main() {
 
     std::cout << "[main] Grouped " << planets.size() << " planets into "
               << systems.size() << " star systems.\n";
+
+    // Real Hipparcos star catalog (CDS VizieR TAP - a third data source,
+    // separate from both NASA sources used above) for the skybox. Built
+    // once here, not per frame - direction/color/size all derive from
+    // real RA/Dec/B-V/Vmag, see the helpers above.
+    {
+        std::vector<StarCatalogEntry> starCatalog = Dataset::LoadStarCatalog("data/star_catalog.json");
+        std::vector<glm::vec3> starDirs;
+        std::vector<glm::vec3> starColors;
+        std::vector<float> starSizes;
+        starDirs.reserve(starCatalog.size());
+        starColors.reserve(starCatalog.size());
+        starSizes.reserve(starCatalog.size());
+        for (const auto& s : starCatalog) {
+            starDirs.push_back(raDecToDirection(s.raDeg, s.decDeg));
+            starColors.push_back(bvToColor(s.bv) * vmagToBrightness(s.vmag));
+            starSizes.push_back(vmagToPointSize(s.vmag));
+        }
+        renderer.setStarCatalog(starDirs, starColors, starSizes);
+    }
 
     int currentSystemIndex = 0;
     int selectedPlanetLocal = -1; // index within systems[currentSystemIndex].planetIndices
@@ -464,10 +542,12 @@ int main() {
             glm::mat4 viewProj = proj * view;
 
             glm::mat4 viewRotOnly = glm::mat4(glm::mat3(view));
-            glm::mat4 invViewProjRot = glm::inverse(proj * viewRotOnly);
+            glm::mat4 viewProjRotFwd = proj * viewRotOnly;
+            glm::mat4 invViewProjRot = glm::inverse(viewProjRotFwd);
             renderer.renderSkybox(invViewProjRot, static_cast<float>(now),
                 static_cast<float>(currentSystem.galacticLatDeg), static_cast<float>(currentSystem.galacticLonDeg),
                 hashSeedFromString(currentSystem.hostName));
+            renderer.renderStarCatalog(viewProjRotFwd);
 
             std::vector<glm::vec3> positions(currentSystem.planetIndices.size());
             for (size_t local = 0; local < currentSystem.planetIndices.size(); ++local) {
@@ -503,11 +583,13 @@ int main() {
             glm::mat4 viewProj = proj * view;
 
             glm::mat4 viewRotOnly = glm::mat4(glm::mat3(view));
-            glm::mat4 invViewProjRot = glm::inverse(proj * viewRotOnly);
+            glm::mat4 viewProjRotFwd = proj * viewRotOnly;
+            glm::mat4 invViewProjRot = glm::inverse(viewProjRotFwd);
             const StarSystem& detailSystem = systems[currentSystemIndex];
             renderer.renderSkybox(invViewProjRot, static_cast<float>(now),
                 static_cast<float>(detailSystem.galacticLatDeg), static_cast<float>(detailSystem.galacticLonDeg),
                 hashSeedFromString(detailSystem.hostName));
+            renderer.renderStarCatalog(viewProjRotFwd);
 
             // Real axial tilt (e.g. Uranus rolling on its side) for known
             // Solar System bodies; untilted for generic exoplanets, since
@@ -564,19 +646,36 @@ int main() {
                 glm::vec3 moonPos(moonOrbit.positionAtTime(fastDays));
 
                 glm::mat4 moonModel = glm::translate(glm::mat4(1.0f), moonPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.12f));
-                glm::vec3 moonColor = moon.isReal ? glm::vec3(0.8f, 0.85f, 0.95f) : glm::vec3(0.6f, 0.6f, 0.65f);
-                float moonAlpha = moon.isReal ? 0.7f : 0.4f; // dimmer for speculative ones
-                renderer.renderPlanetDetail(viewProj, moonModel, moonColor, moonAlpha);
+
+                PlanetAppearance moonAppearance = moon.isReal ? SolarSystemAppearance::Lookup(moon.name) : PlanetAppearance{};
+                if (moonAppearance.isKnown) {
+                    // Real, well-photographed moon (Io, Europa, Titan, etc.)
+                    // - same solid-surface + wireframe-grid pipeline as planets.
+                    float moonSeed = detailSurfaceSeed + static_cast<float>(mi) * 7.0f;
+                    renderer.renderPlanetSurface(viewProj, moonModel, eye, 0,
+                                                  moonAppearance.primaryColor, phosphorGreen,
+                                                  static_cast<float>(now), moonSeed, &moonAppearance);
+                    glm::mat4 moonGridModel = glm::scale(moonModel, glm::vec3(1.03f));
+                    renderer.renderPlanetDetail(viewProj, moonGridModel, phosphorGreen * 0.7f, 0.4f);
+                } else {
+                    // Speculative moon, or a real one we haven't hand-modeled
+                    // yet - plain wireframe dot, dimmer to signal lower certainty.
+                    glm::vec3 moonColor = moon.isReal ? glm::vec3(0.8f, 0.85f, 0.95f) : glm::vec3(0.6f, 0.6f, 0.65f);
+                    float moonAlpha = moon.isReal ? 0.7f : 0.4f;
+                    renderer.renderPlanetDetail(viewProj, moonModel, moonColor, moonAlpha);
+                }
 
                 // Orbit path guide, sampled across a full period so it
                 // traces the real tilted/eccentric ellipse, not a flat circle.
+                glm::vec3 guideColor = moon.isReal ? glm::vec3(0.8f, 0.85f, 0.95f) : glm::vec3(0.6f, 0.6f, 0.65f);
+                float guideAlpha = moon.isReal ? 0.7f : 0.4f;
                 std::vector<glm::vec3> orbitPts;
                 constexpr int kOrbitSegs = 64;
                 for (int s = 0; s <= kOrbitSegs; ++s) {
                     double t = moonElements.periodDays * s / kOrbitSegs;
                     orbitPts.emplace_back(moonOrbit.positionAtTime(t));
                 }
-                renderer.renderAuxiliaryRing(viewProj, orbitPts, moonColor, moonAlpha * 0.4f);
+                renderer.renderAuxiliaryRing(viewProj, orbitPts, guideColor, guideAlpha * 0.4f);
             }
         }
 

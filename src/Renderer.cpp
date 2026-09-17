@@ -160,10 +160,35 @@ void main() {
         color = mix(uBaseColor, uSecondaryColor, bandMix * 0.6);
 
         if (uHasContinents == 1) {
-            // Earth: fbm as a land/ocean mask instead of horizontal bands.
-            float landMask = fbm(vUV * 5.0 + uSeed * 0.3);
-            float landEdge = smoothstep(0.42, 0.5, landMask);
-            color = mix(uBaseColor, uSecondaryColor, landEdge);
+            // Earth only (uHasContinents is never set for any other body).
+            // A single fbm threshold here used to produce one connected
+            // blob that read as "Pangea" rather than modern separate
+            // continents. Instead, union several individually-bounded
+            // falloff blobs at roughly-correct relative positions, so
+            // landmasses are guaranteed separate regardless of noise
+            // parameters - not cartographically precise, but unmistakably
+            // "several continents", not one.
+            vec2 c0 = vec2(0.20, 0.32); float r0 = 0.11; // North America
+            vec2 c1 = vec2(0.30, 0.62); float r1 = 0.09; // South America
+            vec2 c2 = vec2(0.52, 0.52); float r2 = 0.13; // Africa
+            vec2 c3 = vec2(0.64, 0.28); float r3 = 0.17; // Eurasia
+            vec2 c4 = vec2(0.82, 0.68); float r4 = 0.06; // Australia
+            vec2 c5 = vec2(0.50, 0.93); float r5 = 0.22; // Antarctica (south-polar)
+
+            vec2 centers[6] = vec2[6](c0, c1, c2, c3, c4, c5);
+            float radii[6] = float[6](r0, r1, r2, r3, r4, r5);
+
+            float land = 0.0;
+            for (int c = 0; c < 6; c++) {
+                vec2 d = vUV - centers[c];
+                d.x = min(abs(d.x), 1.0 - abs(d.x)); // wrap around longitude seam
+                float dist = length(d);
+                float edgeRoughness = fbm(vUV * 10.0 + float(c) * 13.7 + uSeed) * 0.06;
+                float blob = 1.0 - smoothstep(radii[c] - 0.03 + edgeRoughness, radii[c] + edgeRoughness, dist);
+                land = max(land, blob);
+            }
+
+            color = mix(uBaseColor, uSecondaryColor, land);
             float clouds = fbm(vUV * 8.0 + vec2(uTime * 0.015, 0.0)) * 0.4;
             color += vec3(clouds * 0.12);
         }
@@ -309,19 +334,12 @@ void main() {
 
     vec3 color = vec3(0.01, 0.015, 0.026); // near-black, faint blue tint
 
-    // Stars: two sparse hash-based point layers at different densities.
-    vec3 cellA = floor(dir * 220.0);
-    float hA = hash31(cellA + uSeed);
-    if (hA > 0.9975) {
-        float brightness = fract(hA * 71.3);
-        vec3 starColor = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.85), fract(hA * 13.7));
-        color += starColor * brightness * 1.4;
-    }
-    vec3 cellB = floor(dir * 55.0);
-    float hB = hash31(cellB + uSeed * 1.7 + 91.0);
-    if (hB > 0.997) {
-        color += vec3(1.0, 0.97, 0.9) * 0.85;
-    }
+    // Note: procedural stars used to be generated here via hash noise.
+    // They've been replaced by renderStarCatalog's real Hipparcos-catalog
+    // points, drawn as a separate pass - see main.cpp. This shader now
+    // only supplies what still has no simple bulk real-data source: the
+    // nebula patches and the galactic band (whose ORIENTATION is real,
+    // even though the patches themselves are stylized).
 
     // Nebula: soft colored patches via a spherical projection of the
     // ray direction, so patches stay fixed in world space.
@@ -346,6 +364,44 @@ void main() {
     color += vec3(0.55, 0.5, 0.6) * band * 0.5;
 
     FragColor = vec4(color, 1.0);
+}
+)";
+
+// Real star catalog (Hipparcos, via CDS VizieR) rendered as point
+// sprites. Unlike the skybox background, direction/color/size here come
+// from genuinely measured data (RA/Dec, B-V color index, visual
+// magnitude), precomputed once on the CPU when the catalog loads - see
+// main.cpp. This shader just projects and draws them.
+const char* kStarPointVS = R"(
+#version 330 core
+layout(location = 0) in vec3 aDir;       // unit direction, real RA/Dec converted to Cartesian
+layout(location = 1) in vec3 aColor;     // from the star's real B-V color index
+layout(location = 2) in float aPointSize; // from the star's real visual magnitude
+uniform mat4 uViewProjRot; // proj * rotation-only view (NOT inverted - forward projection)
+out vec3 vColor;
+void main() {
+    vColor = aColor;
+    vec4 clip = uViewProjRot * vec4(aDir * 50.0, 1.0);
+    // Force depth to just inside the far plane, regardless of the
+    // current camera's actual near/far range, so real stars are never
+    // near/far-clipped by whatever projection the active view is using.
+    clip.z = clip.w * 0.9999;
+    gl_Position = clip;
+    gl_PointSize = aPointSize;
+}
+)";
+
+const char* kStarPointFS = R"(
+#version 330 core
+in vec3 vColor;
+out vec4 FragColor;
+void main() {
+    // Soft round point instead of a hard square.
+    vec2 c = gl_PointCoord - vec2(0.5);
+    float d = dot(c, c);
+    if (d > 0.25) discard;
+    float falloff = 1.0 - smoothstep(0.15, 0.25, d);
+    FragColor = vec4(vColor, falloff);
 }
 )";
 
@@ -403,6 +459,13 @@ bool Renderer::init() {
     GLuint kfs = compileShader(GL_FRAGMENT_SHADER, kSkyboxFS);
     m_skyboxShader = linkProgram(kvs, kfs);
 
+    GLuint spvs = compileShader(GL_VERTEX_SHADER, kStarPointVS);
+    GLuint spfs = compileShader(GL_FRAGMENT_SHADER, kStarPointFS);
+    m_starPointShader = linkProgram(spvs, spfs);
+
+    glGenVertexArrays(1, &m_starCatalogVao);
+    glGenBuffers(1, &m_starCatalogVbo);
+
     glGenVertexArrays(1, &m_pointsVao);
     glGenBuffers(1, &m_pointsVbo);
 
@@ -414,7 +477,8 @@ bool Renderer::init() {
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0 && m_skyboxShader != 0;
+    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0
+        && m_skyboxShader != 0 && m_starPointShader != 0;
 }
 
 void Renderer::buildSphereWireframe() {
@@ -607,6 +671,9 @@ void Renderer::shutdown() {
     glDeleteBuffers(1, &m_skyboxVbo);
     glDeleteVertexArrays(1, &m_skyboxVao);
     glDeleteProgram(m_skyboxShader);
+    glDeleteBuffers(1, &m_starCatalogVbo);
+    glDeleteVertexArrays(1, &m_starCatalogVao);
+    glDeleteProgram(m_starPointShader);
     glDeleteProgram(m_lineShader);
     glDeleteProgram(m_pointShader);
 }
@@ -766,6 +833,54 @@ void Renderer::renderSkybox(const glm::mat4& invViewProjRotationOnly, float time
 
     glBindVertexArray(m_skyboxVao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::setStarCatalog(const std::vector<glm::vec3>& directions,
+                               const std::vector<glm::vec3>& colors,
+                               const std::vector<float>& pointSizes) {
+    size_t n = directions.size();
+    if (colors.size() != n || pointSizes.size() != n) {
+        std::cerr << "[Renderer] setStarCatalog: mismatched array sizes, ignoring.\n";
+        return;
+    }
+
+    std::vector<float> verts; // dir.xyz, color.rgb, pointSize per star = 7 floats
+    verts.reserve(n * 7);
+    for (size_t i = 0; i < n; ++i) {
+        verts.push_back(directions[i].x);
+        verts.push_back(directions[i].y);
+        verts.push_back(directions[i].z);
+        verts.push_back(colors[i].r);
+        verts.push_back(colors[i].g);
+        verts.push_back(colors[i].b);
+        verts.push_back(pointSizes[i]);
+    }
+
+    glBindVertexArray(m_starCatalogVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_starCatalogVbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(6 * sizeof(float)));
+    glBindVertexArray(0);
+
+    m_starCatalogCount = static_cast<GLsizei>(n);
+}
+
+void Renderer::renderStarCatalog(const glm::mat4& viewProjRot) {
+    if (m_starCatalogCount == 0) return;
+
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(m_starPointShader);
+    glUniformMatrix4fv(glGetUniformLocation(m_starPointShader, "uViewProjRot"), 1, GL_FALSE, &viewProjRot[0][0]);
+
+    glBindVertexArray(m_starCatalogVao);
+    glDrawArrays(GL_POINTS, 0, m_starCatalogCount);
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
 }

@@ -96,6 +96,23 @@ public:
     void renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds,
                        float galacticLatDeg, float galacticLonDeg, float seed);
 
+    // Uploads the real Hipparcos star catalog once (call after init(),
+    // whenever the catalog is loaded/changed - NOT every frame). Each
+    // parallel array must be the same length: unit direction (from real
+    // RA/Dec), RGB color (from real B-V color index), and point size
+    // (from real visual magnitude) - see main.cpp for the conversions.
+    void setStarCatalog(const std::vector<glm::vec3>& directions,
+                         const std::vector<glm::vec3>& colors,
+                         const std::vector<float>& pointSizes);
+
+    // Draws the real star catalog as point sprites. `viewProjRot` is
+    // proj * rotation-only view (the forward transform - NOT inverted,
+    // unlike renderSkybox's matrix) so real star directions project to
+    // the correct screen position while still ignoring camera
+    // translation, matching the skybox's "infinitely distant" behavior.
+    // Safe to call with an empty catalog (draws nothing).
+    void renderStarCatalog(const glm::mat4& viewProjRot);
+
 private:
     GLuint m_lineShader = 0;
     GLuint m_pointShader = 0;
@@ -123,6 +140,11 @@ private:
     // Full-screen quad for the procedural skybox background.
     GLuint m_skyboxVao = 0, m_skyboxVbo = 0;
     GLuint m_skyboxShader = 0;
+
+    // Real Hipparcos star catalog point buffer.
+    GLuint m_starCatalogVao = 0, m_starCatalogVbo = 0;
+    GLsizei m_starCatalogCount = 0;
+    GLuint m_starPointShader = 0;
 
     void buildSphereWireframe();
     void buildSolidSphereMesh();

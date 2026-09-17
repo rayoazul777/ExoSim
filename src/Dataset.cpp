@@ -367,3 +367,42 @@ void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord
 
     std::cout << "[Dataset] Added " << added << " dwarf planet(s) from NASA/JPL SBDB.\n";
 }
+
+std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) {
+    std::vector<StarCatalogEntry> stars;
+
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[Dataset] No star_catalog.json found - the skybox will use its procedural "
+                  << "nebula/band only, with no real starfield (run fetch_exoplanets.py to pull "
+                  << "the real Hipparcos catalog via CDS's VizieR TAP service).\n";
+        return stars;
+    }
+
+    json root;
+    try {
+        file >> root;
+    } catch (const std::exception& e) {
+        std::cerr << "[Dataset] star_catalog.json parse error: " << e.what() << "\n";
+        return stars;
+    }
+
+    stars.reserve(root.size());
+    for (const auto& row : root) {
+        double ra = numOr(row, "ra_deg", -1.0);
+        double dec = numOr(row, "dec_deg", -999.0);
+        double vmag = numOr(row, "vmag", 999.0);
+        if (ra < 0.0 || dec < -90.0 - 1e-6 || vmag > 900.0) continue; // malformed row, skip
+
+        StarCatalogEntry s;
+        s.raDeg = ra;
+        s.decDeg = dec;
+        s.vmag = vmag;
+        s.hasBv = row.contains("bv") && !row["bv"].is_null();
+        if (s.hasBv) s.bv = numOr(row, "bv", 0.6);
+        stars.push_back(s);
+    }
+
+    std::cout << "[Dataset] Loaded " << stars.size() << " real stars from the Hipparcos catalog.\n";
+    return stars;
+}

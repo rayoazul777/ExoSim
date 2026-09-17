@@ -11,6 +11,8 @@ Usage:
 """
 
 import argparse
+import csv
+import io
 import json
 import sys
 import urllib.parse
@@ -48,6 +50,19 @@ STELLARHOSTS_COLUMNS = ["hostname", "st_teff", "st_rad", "st_mass", "st_spectype
 # constants. Docs: https://ssd-api.jpl.nasa.gov/doc/sbdb.html
 SBDB_BASE = "https://ssd-api.jpl.nasa.gov/sbdb.api"
 DWARF_PLANET_NAMES = ["Ceres", "Pluto", "Eris", "Haumea", "Makemake"]
+
+# CDS's VizieR TAP service (Strasbourg astronomical data center) - a
+# THIRD distinct data source, different from both NASA services above.
+# Used to pull the real Hipparcos star catalog (ESA mission, table
+# I/239/hip_main) for the skybox's starfield, replacing the earlier
+# purely-stylized hash-noise stars with real measured positions.
+# No key needed. Docs: https://tapvizier.cds.unistra.fr/adql/
+VIZIER_TAP_BASE = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
+# Vmag <= 6.5 is the traditional naked-eye visibility limit - about 9,000
+# stars, a well-understood scope match for "the visible night sky" rather
+# than the full ~118,000-star catalog (which goes much fainter than any
+# eye could see, and would be gratuitous data volume for a background).
+STAR_CATALOG_VMAG_LIMIT = 6.5
 
 
 def build_query(limit: int | None) -> str:
@@ -127,6 +142,80 @@ def fetch_dwarf_planets():
     return results
 
 
+def fetch_star_catalog():
+    """
+    Queries CDS's VizieR TAP service for the Hipparcos catalog (ESA
+    mission, table I/239/hip_main): real right ascension, declination,
+    visual magnitude, and B-V color index for every star down to the
+    naked-eye limit. Returns a list of {"ra_deg","dec_deg","vmag","bv"}
+    records for ExoSim's skybox to render as real, positioned points
+    instead of procedural noise.
+
+    VizieR's TAP sync endpoint returns CSV here (confirmed to work in
+    published examples) rather than JSON (unconfirmed for this specific
+    service), so this parses CSV defensively: any row that doesn't parse
+    cleanly is skipped rather than aborting the whole fetch, since a
+    background starfield missing a few odd rows is harmless, while
+    crashing on one bad row would lose the whole catalog.
+    """
+    adql = (
+        'SELECT HIP, RAICRS, DEICRS, Vmag, "B-V" '
+        f'FROM "I/239/hip_main" WHERE Vmag<={STAR_CATALOG_VMAG_LIMIT}'
+    )
+    params = {"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "CSV", "QUERY": adql}
+    url = f"{VIZIER_TAP_BASE}?{urllib.parse.urlencode(params)}"
+    print(f"Requesting: {url}")
+
+    try:
+        with urllib.request.urlopen(url, timeout=90) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"VizieR TAP request failed: HTTP {resp.status}")
+            text = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"WARNING: couldn't fetch the Hipparcos star catalog ({e}) - "
+              f"the skybox will fall back to its procedural stars, but ExoSim still runs fine.",
+              file=sys.stderr)
+        return []
+
+    reader = csv.reader(io.StringIO(text))
+    rows = [r for r in reader if r and not r[0].startswith("#")]
+    if not rows:
+        print("WARNING: Hipparcos catalog response had no usable rows.", file=sys.stderr)
+        return []
+
+    header = [h.strip().lstrip("_").upper() for h in rows[0]]
+
+    def col_index(*names):
+        for name in names:
+            if name in header:
+                return header.index(name)
+        return None
+
+    ra_i = col_index("RAICRS", "RA_ICRS", "RA(ICRS)")
+    de_i = col_index("DEICRS", "DE_ICRS", "DE(ICRS)")
+    vmag_i = col_index("VMAG")
+    bv_i = col_index("B-V", "B_V", "BV")
+
+    if ra_i is None or de_i is None or vmag_i is None:
+        print(f"WARNING: unexpected Hipparcos CSV header {header!r} - "
+              f"couldn't find RA/Dec/Vmag columns, skipping star catalog.", file=sys.stderr)
+        return []
+
+    results = []
+    for row in rows[1:]:
+        if len(row) <= max(ra_i, de_i, vmag_i):
+            continue
+        ra = _to_float(row[ra_i])
+        dec = _to_float(row[de_i])
+        vmag = _to_float(row[vmag_i])
+        if ra is None or dec is None or vmag is None:
+            continue
+        bv = _to_float(row[bv_i]) if (bv_i is not None and bv_i < len(row)) else None
+        results.append({"ra_deg": ra, "dec_deg": dec, "vmag": vmag, "bv": bv})
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None,
@@ -139,6 +228,10 @@ def main():
                          help="Output path for NASA/JPL SBDB dwarf-planet data, relative to this script's directory")
     parser.add_argument("--skip-dwarf-planets", action="store_true",
                          help="Skip the NASA/JPL SBDB dwarf-planet fetch (5 quick extra requests)")
+    parser.add_argument("--star-catalog-out", type=str, default="star_catalog.json",
+                         help="Output path for the Hipparcos star catalog, relative to this script's directory")
+    parser.add_argument("--skip-star-catalog", action="store_true",
+                         help="Skip the VizieR/Hipparcos star catalog fetch (~9,000-row CSV request)")
     args = parser.parse_args()
 
     try:
@@ -175,6 +268,14 @@ def main():
                 json.dump(dwarf_rows, f)
             print(f"Wrote {len(dwarf_rows)} dwarf planet records to {args.dwarf_planets_out} "
                   f"(NASA/JPL SBDB - a different NASA source from the Exoplanet Archive above)")
+
+    if not args.skip_star_catalog:
+        star_catalog_rows = fetch_star_catalog()
+        if star_catalog_rows:
+            with open(args.star_catalog_out, "w", encoding="utf-8") as f:
+                json.dump(star_catalog_rows, f)
+            print(f"Wrote {len(star_catalog_rows)} real star positions to {args.star_catalog_out} "
+                  f"(Hipparcos catalog via CDS VizieR TAP - a third, separate data source)")
 
 
 if __name__ == "__main__":

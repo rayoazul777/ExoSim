@@ -36,6 +36,18 @@ struct StarComponent {
     bool hasData = false; // false = a known-to-exist companion (from sy_snum) with no resolved properties
 };
 
+// One real star from the Hipparcos catalog (ESA mission, via CDS's
+// VizieR TAP service - a third data source, separate from both NASA
+// services used elsewhere in Dataset). Used only for the skybox's
+// starfield - genuinely real positions/brightness/color, not procedural.
+struct StarCatalogEntry {
+    double raDeg = 0.0;
+    double decDeg = 0.0;
+    double vmag = 0.0;    // visual magnitude - lower/negative is brighter
+    double bv = 0.6;      // B-V color index (0.6 ~ Sun-like, if not measured)
+    bool hasBv = false;
+};
+
 struct PlanetRecord {
     std::string name;
     std::string hostStar;
@@ -129,5 +141,12 @@ public:
     // get bucketed into the "Sun" system like the 8 main planets. Safe
     // to call even if the file doesn't exist - it just adds nothing.
     static void LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord>& planets);
+
+    // Loads the real Hipparcos star catalog from data/star_catalog.json
+    // (produced by fetch_exoplanets.py querying CDS's VizieR TAP service -
+    // see StarCatalogEntry's comment). Returns an empty vector if the file
+    // doesn't exist or fails to parse; the skybox simply omits real stars
+    // in that case rather than failing.
+    static std::vector<StarCatalogEntry> LoadStarCatalog(const std::string& path);
 };
 

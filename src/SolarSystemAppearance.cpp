@@ -91,9 +91,66 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
     // up close, so we genuinely don't have a real appearance to show -
     // they use the honest generic classifier look instead, same as any
     // real exoplanet.
-    // Everything else (every real exoplanet, and the demo's own Sun) is
-    // left as the default isKnown=false - PlanetClassifier's generic
-    // procedural look applies instead.
+
+    // --- Moons (only the ones our own missions have actually imaged
+    // up close - see main.cpp, which only ever applies this lookup to
+    // moons flagged isReal=true, never to speculative exoplanet moons) ---
+    else if (name == "Moon") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.72f, 0.70f, 0.66f);    // pale gray, heavily cratered
+        a.secondaryColor = glm::vec3(0.55f, 0.53f, 0.50f);
+        a.axialTiltDeg = 6.68f;
+    } else if (name == "Phobos" || name == "Deimos") {
+        // Real bodies are irregular/potato-shaped - our sphere is a
+        // simplification for both these and every other non-round body.
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.40f, 0.36f, 0.33f);    // dark, reddish-gray
+        a.secondaryColor = glm::vec3(0.30f, 0.27f, 0.25f);
+    } else if (name == "Io") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.85f, 0.70f, 0.35f);    // sulfur yellow-orange
+        a.secondaryColor = glm::vec3(0.70f, 0.35f, 0.15f);  // volcanic deposits
+        a.hasGreatSpot = true;
+        a.spotColor = glm::vec3(0.25f, 0.08f, 0.05f);       // an active volcanic caldera
+        a.spotLatitude = 0.5f;
+        a.spotLongitude = 0.4f;
+    } else if (name == "Europa") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.83f, 0.86f, 0.90f);    // icy white
+        a.secondaryColor = glm::vec3(0.55f, 0.38f, 0.32f);  // reddish-brown surface cracks (lineae)
+        // Note: real Europa's cracks are long linear features - this
+        // shader's banding gives a stylized mottled approximation, not
+        // the real crack geometry.
+    } else if (name == "Ganymede") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.58f, 0.55f, 0.52f);    // grayish-brown, cratered/grooved
+        a.secondaryColor = glm::vec3(0.42f, 0.40f, 0.40f);
+    } else if (name == "Callisto") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.42f, 0.38f, 0.35f);    // dark, heavily cratered
+        a.secondaryColor = glm::vec3(0.30f, 0.27f, 0.25f);
+    } else if (name == "Titan") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.82f, 0.62f, 0.36f);    // hazy orange
+        a.secondaryColor = glm::vec3(0.70f, 0.50f, 0.28f);
+        a.hazeIntensity = 0.75f;                            // thick atmosphere obscures the surface
+    } else if (name == "Rhea") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.80f, 0.80f, 0.80f);    // bright icy surface
+        a.secondaryColor = glm::vec3(0.68f, 0.68f, 0.68f);
+    } else if (name == "Titania" || name == "Oberon") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.55f, 0.55f, 0.58f);    // dark icy-gray
+        a.secondaryColor = glm::vec3(0.42f, 0.42f, 0.45f);
+    } else if (name == "Triton") {
+        a.isKnown = true;
+        a.primaryColor = glm::vec3(0.85f, 0.80f, 0.80f);    // pale pink-white nitrogen frost
+        a.secondaryColor = glm::vec3(0.70f, 0.65f, 0.66f);
+        a.axialTiltDeg = 157.0f;                            // reflects its steep retrograde-like orbit
+    }
+    // Everything else (every real exoplanet, every speculative moon, and
+    // the demo's own Sun) is left as the default isKnown=false -
+    // PlanetClassifier's generic procedural look applies instead.
 
     return a;
 }
