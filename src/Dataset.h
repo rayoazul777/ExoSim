@@ -14,7 +14,24 @@ struct MoonRecord {
     std::string name;
     double orbitRadiusPlanetRadii = 0.0; // distance from planet, in units of the planet's own radius
     double orbitPeriodDays = 0.0;
+    double inclinationDeg = 0.0;         // real for demo moons (approximate), illustrative otherwise
+    double eccentricity = 0.0;           // real for demo moons (approximate), illustrative otherwise
     bool isReal = false;
+};
+
+// A companion star in a multi-star system. The Archive's `stellarhosts`
+// table gives real per-star temperature/radius/mass where a companion has
+// been independently characterized, but has NO bulk-queryable physical or
+// angular separation field - that lives in individual discovery papers,
+// not a simple column. So `hasData` real properties are trustworthy, but
+// any on-screen POSITION for a companion is always schematic, never a
+// real separation - the UI must say so wherever a companion is shown.
+struct StarComponent {
+    double teffK = 0.0;
+    double radiusSolar = 0.0;
+    double massSolar = 0.0;
+    std::string spectralType;
+    bool hasData = false; // false = a known-to-exist companion (from sy_snum) with no resolved properties
 };
 
 struct PlanetRecord {
@@ -59,6 +76,14 @@ struct StarSystem {
     double starMassSolar = 0.0;
     std::string starSpectralType;
     int numStars = 1;
+
+    // Populated by LoadStellarHosts, only for systems with numStars > 1.
+    // Real per-star data where the Archive has it distinguished; padded
+    // with hasData=false placeholders up to numStars-1 when it doesn't -
+    // either way, position is always schematic (see StarComponent).
+    std::vector<StarComponent> companions;
+
+    bool isHome = false; // true only for the built-in Sol reference system
 };
 
 class Dataset {
@@ -76,5 +101,11 @@ public:
     // most-populated systems first (multi-planet systems are more
     // interesting to land on by default than lone single-planet ones).
     static std::vector<StarSystem> GroupByHost(const std::vector<PlanetRecord>& planets);
+
+    // Enriches multi-star systems with real companion-star data from
+    // data/stellar_hosts.json (produced by fetch_exoplanets.py), when
+    // present. Safe to call even if the file doesn't exist - companions
+    // are simply left empty (schematic rendering is skipped) in that case.
+    static void LoadStellarHosts(const std::string& path, std::vector<StarSystem>& systems);
 };
 

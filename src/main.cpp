@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <unordered_map>
 
 #include "Dataset.h"
 #include "KeplerOrbit.h"
@@ -165,6 +166,8 @@ namespace {
             float variety = std::fmod(seed * (static_cast<float>(i) + 1.7f), 23.0f);
             m.orbitRadiusPlanetRadii = 3.0 + variety;      // purely illustrative spacing
             m.orbitPeriodDays = 2.0 + variety * 1.5;       // purely illustrative, not physically derived
+            m.inclinationDeg = std::fmod(seed * (static_cast<float>(i) + 3.3f), 25.0f);   // illustrative
+            m.eccentricity = std::fmod(seed * (static_cast<float>(i) + 1.1f), 28.0f) / 100.0; // illustrative, kept low
             m.isReal = false;
             moons.push_back(m);
         }
@@ -215,10 +218,17 @@ int main() {
     glfwSetScrollCallback(window, scrollCallback);
 
     // --- Load data (real archive export if present, else demo system) ---
+    // Our own solar system is always included, alongside whatever the
+    // Archive fetch produced, as a real-data reference point - see the
+    // isHome flag below and its priority placement in the system list.
     std::vector<PlanetRecord> planets;
-    if (!Dataset::LoadFromFile("data/exoplanets.json", planets) || planets.empty()) {
-        std::cout << "[main] Falling back to built-in demo solar system.\n";
+    bool loadedRealArchiveData = Dataset::LoadFromFile("data/exoplanets.json", planets) && !planets.empty();
+    if (!loadedRealArchiveData) {
+        std::cout << "[main] No archive data found - using the built-in solar system only.\n";
         planets = Dataset::DemoSolarSystem();
+    } else {
+        std::vector<PlanetRecord> sol = Dataset::DemoSolarSystem();
+        planets.insert(planets.end(), sol.begin(), sol.end());
     }
 
     std::vector<KeplerOrbit> orbits;
@@ -226,6 +236,14 @@ int main() {
     for (auto& p : planets) orbits.emplace_back(p.elements);
 
     std::vector<StarSystem> systems = Dataset::GroupByHost(planets);
+    for (auto& sys : systems) if (sys.hostName == "Sun") sys.isHome = true;
+    // Home system always leads the list, ahead of the usual
+    // most-planets-first ordering GroupByHost already applied.
+    std::stable_sort(systems.begin(), systems.end(),
+        [](const StarSystem& a, const StarSystem& b) { return a.isHome && !b.isHome; });
+
+    Dataset::LoadStellarHosts("data/stellar_hosts.json", systems);
+
     std::cout << "[main] Grouped " << planets.size() << " planets into "
               << systems.size() << " star systems.\n";
 
@@ -245,9 +263,38 @@ int main() {
     std::vector<MoonRecord> detailMoons;
     bool detailMoonsAreReal = false; // true only for the built-in demo solar system
 
+    // Speculative moons are deterministic from the planet's name, but are
+    // cached after first generation (rather than recomputed every click)
+    // so they behave like stable, inspectable data for the rest of the
+    // session instead of being silently regenerated each time.
+    std::unordered_map<size_t, std::vector<MoonRecord>> speculativeMoonCache;
+    auto getMoonsForPlanet = [&](size_t pIdx) -> const std::vector<MoonRecord>& {
+        if (!planets[pIdx].moons.empty()) return planets[pIdx].moons;
+        auto it = speculativeMoonCache.find(pIdx);
+        if (it != speculativeMoonCache.end()) return it->second;
+        float seed = 0.0f;
+        for (char ch : planets[pIdx].name) seed += static_cast<float>(static_cast<unsigned char>(ch));
+        PlanetClassification cls = PlanetClassifier::Classify(planets[pIdx]);
+        auto inserted = speculativeMoonCache.emplace(pIdx, generateSpeculativeMoons(cls.type, seed));
+        return inserted.first->second;
+    };
+
     // Current system's star (recomputed whenever the selected system changes).
     StarClassification currentStar;
     float starDisplayRadius = 0.05f; // in the same display-space units as orbit rings
+
+    // Companion stars for the current system (empty unless numStars > 1).
+    // Position is always schematic (see StarComponent's comment) - the
+    // Archive has no bulk separation field, so these are arranged evenly
+    // around the primary rather than placed at any claimed real distance.
+    struct CompanionVisual {
+        glm::vec3 position;
+        glm::vec3 color;
+        float displayRadius;
+        bool hasData;
+        std::string label;
+    };
+    std::vector<CompanionVisual> currentCompanions;
 
     // Reference-distance "guide rings" shown only when log-scale is on, so
     // the compression doesn't silently imply orbits are literally that
@@ -297,6 +344,41 @@ int main() {
         // large the exaggeration slider is set.
         starDisplayRadius = static_cast<float>(std::min(exaggerated, minDisplay * 0.3));
         starDisplayRadius = std::max(starDisplayRadius, 0.01f);
+
+        // Companion stars: real temperature/mass/radius where the Archive
+        // has resolved them (see StarComponent), but ALWAYS a schematic
+        // position - evenly spaced around the primary at a distance
+        // that's clearly separated but never overruns the innermost
+        // orbit. This is a visualization of "a companion exists here",
+        // not a claim about its real physical separation.
+        currentCompanions.clear();
+        int numCompanions = static_cast<int>(sys.companions.size());
+        if (numCompanions > 0) {
+            double offsetRadius = std::min(minDisplay * 0.5, static_cast<double>(starDisplayRadius) * 8.0);
+            offsetRadius = std::max(offsetRadius, static_cast<double>(starDisplayRadius) * 2.5);
+            for (int i = 0; i < numCompanions; ++i) {
+                double angle = 2.0 * 3.14159265358979323846 * i / numCompanions;
+                CompanionVisual cv;
+                cv.position = glm::vec3(static_cast<float>(offsetRadius * std::cos(angle)), 0.0f,
+                                         static_cast<float>(offsetRadius * std::sin(angle)));
+                const StarComponent& comp = sys.companions[i];
+                if (comp.hasData) {
+                    StarClassification compCls = StarClassifier::Classify(comp.teffK, comp.radiusSolar, comp.spectralType);
+                    cv.color = compCls.color;
+                    double compRealAU = compCls.displayRadiusSolar * kSolarRadiusAU;
+                    cv.displayRadius = static_cast<float>(std::min(compRealAU * starSizeExaggeration, minDisplay * 0.3));
+                    cv.displayRadius = std::max(cv.displayRadius, starDisplayRadius * 0.3f);
+                    cv.hasData = true;
+                    cv.label = compCls.spectralClass;
+                } else {
+                    cv.color = glm::vec3(0.55f, 0.55f, 0.6f);
+                    cv.displayRadius = starDisplayRadius * 0.6f;
+                    cv.hasData = false;
+                    cv.label = "Unknown companion (no resolved stellar data)";
+                }
+                currentCompanions.push_back(cv);
+            }
+        }
 
         // Guide rings: only meaningful (and only drawn) with log-scale on,
         // since without it, distance in the view already IS real AU.
@@ -372,6 +454,12 @@ int main() {
             glm::mat4 starModel = glm::scale(glm::mat4(1.0f), glm::vec3(starDisplayRadius));
             renderer.renderStar(viewProj, starModel, currentStar.color);
 
+            for (const auto& comp : currentCompanions) {
+                glm::mat4 compModel = glm::translate(glm::mat4(1.0f), comp.position)
+                                     * glm::scale(glm::mat4(1.0f), glm::vec3(comp.displayRadius));
+                renderer.renderStar(viewProj, compModel, comp.color);
+            }
+
             for (const auto& gr : guideRings) {
                 renderer.renderAuxiliaryRing(viewProj, gr.points, glm::vec3(0.5f, 0.5f, 0.55f), 0.25f);
             }
@@ -398,25 +486,36 @@ int main() {
             // Distances are compressed with a log curve into a viewable
             // range - real moon distances (tens of planet-radii) would
             // otherwise put them far outside the camera's usual zoom range.
+            // Positions are propagated with the same KeplerOrbit math used
+            // for planets, so inclination and eccentricity genuinely tilt
+            // and distort each moon's path rather than a flat circle.
             for (size_t mi = 0; mi < detailMoons.size(); ++mi) {
                 const MoonRecord& moon = detailMoons[mi];
                 float dispR = 1.3f + 0.9f * std::log10(1.0f + static_cast<float>(moon.orbitRadiusPlanetRadii));
-                float speed = 0.5f / dispR; // closer moons orbit faster, stylized not physical
-                float phase = static_cast<float>(mi) * 2.1f + detailSurfaceSeed * 0.01f;
-                float angle = static_cast<float>(now) * speed + phase;
-                glm::vec3 moonPos(dispR * std::cos(angle), 0.0f, dispR * std::sin(angle));
+
+                OrbitalElements moonElements;
+                moonElements.semiMajorAxisAU = dispR; // repurposed as a display-space distance, not real AU
+                moonElements.eccentricity = moon.eccentricity;
+                moonElements.inclinationDeg = moon.inclinationDeg;
+                moonElements.periodDays = std::max(moon.orbitPeriodDays, 0.1);
+                moonElements.meanAnomalyAtEpochDeg = static_cast<double>(mi) * 61.0 + detailSurfaceSeed;
+                KeplerOrbit moonOrbit(moonElements);
+
+                double fastDays = static_cast<double>(now) * 15.0; // stylized playback speed, not real-time
+                glm::vec3 moonPos(moonOrbit.positionAtTime(fastDays));
 
                 glm::mat4 moonModel = glm::translate(glm::mat4(1.0f), moonPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.12f));
                 glm::vec3 moonColor = moon.isReal ? glm::vec3(0.8f, 0.85f, 0.95f) : glm::vec3(0.6f, 0.6f, 0.65f);
                 float moonAlpha = moon.isReal ? 0.7f : 0.4f; // dimmer for speculative ones
                 renderer.renderPlanetDetail(viewProj, moonModel, moonColor, moonAlpha);
 
-                // Faint orbit path guide.
+                // Orbit path guide, sampled across a full period so it
+                // traces the real tilted/eccentric ellipse, not a flat circle.
                 std::vector<glm::vec3> orbitPts;
-                constexpr int kOrbitSegs = 48;
+                constexpr int kOrbitSegs = 64;
                 for (int s = 0; s <= kOrbitSegs; ++s) {
-                    float p = 2.0f * 3.14159265f * s / kOrbitSegs;
-                    orbitPts.emplace_back(dispR * std::cos(p), 0.0f, dispR * std::sin(p));
+                    double t = moonElements.periodDays * s / kOrbitSegs;
+                    orbitPts.emplace_back(moonOrbit.positionAtTime(t));
                 }
                 renderer.renderAuxiliaryRing(viewProj, orbitPts, moonColor, moonAlpha * 0.4f);
             }
@@ -456,17 +555,22 @@ int main() {
             ImGui::Separator();
 
             ImGui::TextColored(ImVec4(currentStar.color.r, currentStar.color.g, currentStar.color.b, 1.0f),
-                                "Host star: %s", currentStar.spectralClass.c_str());
+                                "Host star: %s%s", currentStar.spectralClass.c_str(),
+                                currentSystem.isHome ? "  [SOL - HOME SYSTEM]" : "");
             if (currentStar.hasMeasuredRadius) {
                 ImGui::Text("Radius: %.2f solar radii (measured)", currentStar.displayRadiusSolar);
             } else {
                 ImGui::TextDisabled("Radius: not measured (assumed Sun-like, 1.0 solar radii)");
             }
             if (currentSystem.numStars > 1) {
-                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
-                    "Multi-star system (%d stars) - only the primary is modeled here;", currentSystem.numStars);
-                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
-                    "companion star(s) aren't rendered.");
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Multi-star system (%d stars).", currentSystem.numStars);
+                ImGui::TextDisabled("Companion position shown is schematic, not a real separation -");
+                ImGui::TextDisabled("the Archive has no bulk-queryable field for that. Color/type");
+                ImGui::TextDisabled("below IS real where the Archive has resolved it separately.");
+                for (const auto& comp : currentCompanions) {
+                    ImGui::TextColored(ImVec4(comp.color.r, comp.color.g, comp.color.b, 1.0f),
+                        "  Companion: %s", comp.label.c_str());
+                }
             }
             ImGui::Separator();
 
@@ -478,9 +582,11 @@ int main() {
             std::string search(searchBuffer);
             for (int i = 0; i < (int)systems.size(); ++i) {
                 if ((int)systems[i].planetIndices.size() < minPlanetsFilter) continue;
-                if (!containsCaseInsensitive(systems[i].hostName, search)) continue;
+                std::string searchableName = systems[i].hostName + (systems[i].isHome ? " Sol Home" : "");
+                if (!containsCaseInsensitive(searchableName, search)) continue;
 
-                std::string label = systems[i].hostName + " ("
+                std::string displayName = systems[i].isHome ? "Sol (Home System)" : systems[i].hostName;
+                std::string label = displayName + " ("
                     + std::to_string(systems[i].planetIndices.size()) + " planet"
                     + (systems[i].planetIndices.size() != 1 ? "s" : "") + ")";
                 if (ImGui::Selectable(label.c_str(), i == currentSystemIndex)) {
@@ -494,10 +600,17 @@ int main() {
             ImGui::EndChild();
 
             ImGui::Separator();
-            ImGui::Text("Planets in %s:", currentSystem.hostName.c_str());
+            ImGui::Text("Planets in %s:", currentSystem.isHome ? "Sol (Home System)" : currentSystem.hostName.c_str());
             for (int local = 0; local < (int)currentSystem.planetIndices.size(); ++local) {
                 size_t pIdx = currentSystem.planetIndices[local];
-                if (ImGui::Selectable(planets[pIdx].name.c_str(), selectedPlanetLocal == local)) {
+                const auto& moonsForRow = getMoonsForPlanet(pIdx);
+                std::string rowLabel = planets[pIdx].name;
+                if (!moonsForRow.empty()) {
+                    bool rowMoonsReal = !planets[pIdx].moons.empty();
+                    rowLabel += " (" + std::to_string(moonsForRow.size())
+                              + (rowMoonsReal ? " moons)" : " candidate moons)");
+                }
+                if (ImGui::Selectable(rowLabel.c_str(), selectedPlanetLocal == local)) {
                     selectedPlanetLocal = local;
                 }
             }
@@ -522,13 +635,8 @@ int main() {
                     detailClassification = PlanetClassifier::Classify(p);
                     detailSurfaceSeed = 0.0f;
                     for (char ch : p.name) detailSurfaceSeed += static_cast<float>(static_cast<unsigned char>(ch));
-                    if (!p.moons.empty()) {
-                        detailMoons = p.moons;
-                        detailMoonsAreReal = true;
-                    } else {
-                        detailMoons = generateSpeculativeMoons(detailClassification.type, detailSurfaceSeed);
-                        detailMoonsAreReal = false;
-                    }
+                    detailMoons = getMoonsForPlanet(pIdx);
+                    detailMoonsAreReal = !p.moons.empty();
                     g_viewMode = ViewMode::PlanetDetail;
                 }
             }
@@ -591,7 +699,7 @@ int main() {
             } else if (detailMoonsAreReal) {
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Moons (real, approximate known orbits):");
                 for (const auto& m : detailMoons) {
-                    ImGui::BulletText("%s - orbital period ~%.2f days", m.name.c_str(), m.orbitPeriodDays);
+                    ImGui::BulletText("%s - period ~%.2f days, inclination ~%.1f deg", m.name.c_str(), m.orbitPeriodDays, m.inclinationDeg);
                 }
             } else {
                 ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "No confirmed moons on record.");

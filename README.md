@@ -29,10 +29,10 @@ ExoSim/
 ```
 
 > **If you fetched data before this update**: re-run `fetch_exoplanets.py` -
-> it now pulls a few more columns (density, equilibrium temperature,
-> stellar spectral type, number of stars) that the star rendering, improved
-> composition estimates, and multi-star flag depend on. An old
-> `exoplanets.json` will still load, just without those refinements.
+> it now also writes `data/stellar_hosts.json` (real companion-star data)
+> alongside `data/exoplanets.json`. The app runs fine without it - it just
+> won't render companion stars, falling back to the amber-text-only flag
+> from before.
 
 ## 1. Get the real data
 
@@ -112,6 +112,37 @@ up: **Project > CMake Settings** and confirm
   everything else stays clearly labeled as a statistical estimate, since
   the Archive itself doesn't carry real atmosphere data for the vast
   majority of planets.
+- **Sol, your home system**: our own solar system is now always included
+  alongside whatever the Archive fetch pulled in, labeled **Sol (Home
+  System)** and pinned to the top of the system list regardless of the
+  usual most-planets-first sort - a fixed real-data reference point to
+  compare everything else against. It's also the most physically detailed
+  system in the app: every planet has real density, equilibrium
+  temperature, radius, mass, argument of periapsis, and longitude of
+  ascending node (J2000-epoch, approximate), not just the bare minimum
+  needed to draw an orbit.
+- **Companion stars**: multi-star systems now render actual companion
+  star(s), not just a text flag. Color and spectral classification are
+  **real**, pulled from the Archive's `stellarhosts` table when a
+  companion has been independently characterized there (deduplicated
+  against repeated publications of the same star). Where the Archive only
+  confirms a companion exists (`sy_snum`) without resolved properties, it's
+  shown as a neutral gray "unknown companion" placeholder - never invented
+  data. **Position is always schematic** in both cases: the Archive has no
+  bulk-queryable field for real physical separation between components
+  (that mostly lives in individual discovery papers), so companions are
+  arranged evenly around the primary at a stylized, clearly-flagged
+  distance rather than a claimed real one.
+- **Moons now use real Kepler orbits**: both real (demo solar system) and
+  speculative (Archive exoplanets) moons are propagated with the same
+  `KeplerOrbit` math used for planets, so inclination and eccentricity
+  genuinely tilt and distort each moon's path - Phobos and Deimos wobble
+  around Mars' equatorial plane, Triton's steep retrograde-like tilt
+  actually shows, and so on - rather than a flat, perfectly circular loop.
+- **Speculative moons are now cached**: generated once per planet (still
+  deterministic from its name) and reused for the rest of the session
+  instead of being regenerated on every inspection, and their count now
+  shows next to each planet's name in the list before you even click in.
 - **Moons**: inspecting a planet also shows any moons orbiting it as small
   wireframe spheres (with faint orbit-guide rings). For the built-in demo
   solar system these are **real** (Moon, the Galilean moons, Titan, etc.,
@@ -166,17 +197,19 @@ up: **Project > CMake Settings** and confirm
 
 ## Where to go next
 
-- **Render actual companion stars**: multi-star systems are flagged now,
-  but only the primary is drawn. Fetching companion star separation/mass
-  (from the Archive's `stellarhosts` table, which this simplified pipeline
-  doesn't currently query) and rendering a second star at the right offset
-  would make circumbinary systems visually accurate rather than just flagged.
-- **Moon orbital inclination/eccentricity**: both real and speculative
-  moons currently orbit flat in the planet's equatorial plane for
-  simplicity - real moons (and any real exomoons, if ever confirmed) can
-  have inclined or eccentric orbits.
-- **Persist speculative moon seeds across the fetched dataset**: right now
-  speculative moons are generated fresh each time you inspect a planet
-  (deterministically, from a name hash), which is fine for consistency but
-  means they aren't inspectable/filterable the way real data is - could be
-  worth precomputing and caching them if that becomes useful.
+- **Real companion separation, if it ever becomes bulk-queryable**: this
+  build deliberately never claims a real physical distance for companion
+  stars, since the Archive doesn't expose one in its bulk API. If a future
+  Archive table (or a supplementary catalog) adds that, swapping the
+  schematic offset for a real one would be a straightforward change to
+  `selectSystem`'s companion-placement code in main.cpp.
+- **Moon argument of periapsis / ascending node**: moons currently use 0
+  for both (only inclination and eccentricity are modeled), so their tilt
+  is simplified relative to the real thing - full realism would need those
+  two additional real angles, which are readily available for our own
+  solar system's moons but weren't included yet for scope reasons.
+- **Binary star orbital motion**: companion stars are currently static
+  (no orbital motion around the system barycenter) - real binaries orbit
+  each other on timescales from years to millennia, which could be
+  animated the same way planets are, once/if real separation and period
+  data become available to drive it.

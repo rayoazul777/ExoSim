@@ -2,6 +2,8 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
+#include <cmath>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -81,21 +83,30 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
 }
 
 std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
-    // Rough real values, just so the app has something to render
-    // out of the box. Inclinations/eccentricities simplified.
-    // Densities are real (g/cm^3) - a nice demonstration that the
-    // density-based classifier correctly separates rocky planets
-    // (Mercury-Mars, ~3.9-5.5) from gas/ice giants (Jupiter-Neptune, ~0.7-1.6).
-    struct Seed { const char* name; double a, e, i, per, density; };
+    // Real values (approximate, J2000-epoch orbital angles) so the demo
+    // system is as physically detailed as the real planets we actually
+    // know well - not just placeholder numbers to make the app run.
+    // eqTempK follows the same "airless blackbody equilibrium" definition
+    // the Archive uses for pl_eqt, so it's directly comparable to
+    // exoplanet values elsewhere in the app (this is why it reads far
+    // colder than each planet's real surface temperature, especially for
+    // Venus, whose greenhouse effect this number deliberately excludes).
+    struct Seed {
+        const char* name;
+        double a, e, i, per, density;
+        double eqTempK, radiusJup, massJup;
+        double argPeriapsisDeg, longAscNodeDeg;
+    };
     static const Seed seeds[] = {
-        {"Mercury",  0.387, 0.206, 7.00,   88.0,  5.43},
-        {"Venus",    0.723, 0.007, 3.39,  224.7,  5.24},
-        {"Earth",    1.000, 0.017, 0.00,  365.25, 5.51},
-        {"Mars",     1.524, 0.093, 1.85,  687.0,  3.93},
-        {"Jupiter",  5.203, 0.049, 1.30, 4331.0,  1.33},
-        {"Saturn",   9.537, 0.056, 2.49,10747.0,  0.69},
-        {"Uranus",  19.191, 0.046, 0.77,30589.0,  1.27},
-        {"Neptune", 30.07,  0.010, 1.77,59800.0,  1.64},
+        // name        a       e      i     per       density  eqTempK  radiusJup  massJup   argPeri  longAscNode
+        {"Mercury",   0.387, 0.206, 7.00,   88.0,   5.43,  440.0, 0.0349, 0.000174,  29.1,  48.3},
+        {"Venus",     0.723, 0.007, 3.39,  224.7,   5.24,  227.0, 0.0865, 0.00257,   54.9,  76.7},
+        {"Earth",     1.000, 0.017, 0.00,  365.25,  5.51,  255.0, 0.0892, 0.00315,  114.2,   0.0},
+        {"Mars",      1.524, 0.093, 1.85,  687.0,   3.93,  210.0, 0.0474, 0.000338, 286.5,  49.6},
+        {"Jupiter",   5.203, 0.049, 1.30, 4331.0,   1.33,  110.0, 1.0,    1.0,      273.9, 100.5},
+        {"Saturn",    9.537, 0.056, 2.49,10747.0,   0.69,   81.0, 0.843,  0.299,    339.4, 113.7},
+        {"Uranus",   19.191, 0.046, 0.77,30589.0,   1.27,   58.0, 0.365,  0.0457,    96.9,  74.0},
+        {"Neptune",  30.07,  0.010, 1.77,59800.0,   1.64,   46.0, 0.354,  0.0536,   276.3, 131.8},
     };
 
     std::vector<PlanetRecord> out;
@@ -107,8 +118,13 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
         p.elements.eccentricity = s.e;
         p.elements.inclinationDeg = s.i;
         p.elements.inclinationMeasured = true; // hand-coded real values, not archive fallbacks
+        p.elements.argPeriapsisDeg = s.argPeriapsisDeg;
+        p.elements.longAscNodeDeg = s.longAscNodeDeg;
         p.elements.periodDays = s.per;
         p.densityGcm3 = s.density;
+        p.eqTempK = s.eqTempK;
+        p.radiusJupiter = s.radiusJup;
+        p.massJupiter = s.massJup;
         p.starTeffK = 5778.0;
         p.starRadiusSolar = 1.0;
         p.starMassSolar = 1.0;
@@ -117,35 +133,38 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
     }
 
     // Real, well-documented moons (approximate orbital distance in units
-    // of the parent planet's own radius, and orbital period in days).
-    // Mercury and Venus genuinely have none, so they're simply omitted.
+    // of the parent planet's own radius, orbital period in days,
+    // inclination relative to the relevant reference plane, and
+    // eccentricity). Mercury and Venus genuinely have none, so they're
+    // simply omitted. Triton's real orbit is retrograde; direction isn't
+    // modeled here, only its unusually high inclination is.
     auto findPlanet = [&out](const char* name) -> PlanetRecord& {
         for (auto& p : out) if (p.name == name) return p;
         return out[0]; // unreachable given the seeds above
     };
     findPlanet("Earth").moons = {
-        {"Moon", 60.3, 27.32, true},
+        {"Moon", 60.3, 27.32, 5.14, 0.0549, true},
     };
     findPlanet("Mars").moons = {
-        {"Phobos", 2.76, 0.319, true},
-        {"Deimos", 6.92, 1.263, true},
+        {"Phobos", 2.76, 0.319, 1.08, 0.0151, true},
+        {"Deimos", 6.92, 1.263, 1.79, 0.00033, true},
     };
     findPlanet("Jupiter").moons = {
-        {"Io", 5.9, 1.77, true},
-        {"Europa", 9.4, 3.55, true},
-        {"Ganymede", 15.0, 7.15, true},
-        {"Callisto", 26.3, 16.69, true},
+        {"Io", 5.9, 1.77, 0.04, 0.0041, true},
+        {"Europa", 9.4, 3.55, 0.47, 0.009, true},
+        {"Ganymede", 15.0, 7.15, 0.20, 0.0013, true},
+        {"Callisto", 26.3, 16.69, 0.19, 0.0074, true},
     };
     findPlanet("Saturn").moons = {
-        {"Titan", 20.3, 15.95, true},
-        {"Rhea", 8.75, 4.52, true},
+        {"Titan", 20.3, 15.95, 0.35, 0.0288, true},
+        {"Rhea", 8.75, 4.52, 0.345, 0.001258, true},
     };
     findPlanet("Uranus").moons = {
-        {"Titania", 17.6, 8.71, true},
-        {"Oberon", 23.6, 13.46, true},
+        {"Titania", 17.6, 8.71, 0.34, 0.0011, true},
+        {"Oberon", 23.6, 13.46, 0.058, 0.0014, true},
     };
     findPlanet("Neptune").moons = {
-        {"Triton", 14.3, 5.877, true}, // orbits retrograde in reality; direction isn't modeled here
+        {"Triton", 14.3, 5.877, 157.0, 0.000016, true},
     };
 
     return out;
@@ -184,4 +203,81 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
         });
 
     return systems;
+}
+
+void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>& systems) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[Dataset] No stellar_hosts.json found - companion stars won't be modeled "
+                  << "(run fetch_exoplanets.py to get it; the app works fine without it).\n";
+        return;
+    }
+
+    json root;
+    try {
+        file >> root;
+    } catch (const std::exception& e) {
+        std::cerr << "[Dataset] stellar_hosts.json parse error: " << e.what() << "\n";
+        return;
+    }
+
+    // Group raw rows by hostname, deduplicating near-identical entries -
+    // the Archive often has several published parameter sets for the
+    // SAME star, and treating each as a separate "star" would fabricate
+    // companions that don't exist. Two rows within a loose tolerance of
+    // each other in temperature and radius are treated as the same star.
+    std::unordered_map<std::string, std::vector<StarComponent>> byHost;
+    for (const auto& row : root) {
+        std::string host = strOr(row, "hostname", "");
+        if (host.empty()) continue;
+
+        StarComponent sc;
+        sc.teffK = numOr(row, "st_teff", 0.0);
+        sc.radiusSolar = numOr(row, "st_rad", 0.0);
+        sc.massSolar = numOr(row, "st_mass", 0.0);
+        sc.spectralType = strOr(row, "st_spectype", "");
+        sc.hasData = true;
+
+        auto& list = byHost[host];
+        bool isDuplicate = false;
+        for (const auto& existing : list) {
+            bool teffClose = std::fabs(existing.teffK - sc.teffK) < 300.0;
+            bool radClose = std::fabs(existing.radiusSolar - sc.radiusSolar) < 0.1;
+            if (teffClose && radClose) { isDuplicate = true; break; }
+        }
+        if (!isDuplicate) list.push_back(sc);
+    }
+
+    int systemsWithRealCompanionData = 0;
+    int systemsWithUnresolvedCompanions = 0;
+
+    for (auto& sys : systems) {
+        if (sys.numStars <= 1) continue;
+
+        auto it = byHost.find(sys.hostName);
+        if (it != byHost.end()) {
+            // it->second[0] is presumed to correspond to the primary
+            // (already known from the ps-table planet data) - any
+            // additional distinct entries become companions.
+            for (size_t i = 1; i < it->second.size() && (int)sys.companions.size() < sys.numStars - 1; ++i) {
+                sys.companions.push_back(it->second[i]);
+            }
+        }
+
+        bool hadRealCompanion = !sys.companions.empty();
+
+        // Pad with unresolved placeholders up to the real star count, so
+        // the rendered star count always matches sy_snum even when we
+        // couldn't distinguish real per-component data for it.
+        while ((int)sys.companions.size() < sys.numStars - 1) {
+            sys.companions.push_back(StarComponent{}); // hasData = false
+        }
+
+        if (hadRealCompanion) ++systemsWithRealCompanionData;
+        else ++systemsWithUnresolvedCompanions;
+    }
+
+    std::cout << "[Dataset] Multi-star systems with resolved companion data: "
+              << systemsWithRealCompanionData << "; with unresolved companion(s): "
+              << systemsWithUnresolvedCompanions << ".\n";
 }
