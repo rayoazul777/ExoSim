@@ -4,7 +4,10 @@
   "dependencies": [
     "glfw3",
     "glm",
-    "imgui",
+    {
+      "name": "imgui",
+      "features": ["glfw-binding", "opengl3-binding"]
+    },
     "nlohmann-json",
     {
       "name": "glad",

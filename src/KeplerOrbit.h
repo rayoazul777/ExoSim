@@ -7,6 +7,7 @@ struct OrbitalElements {
     double semiMajorAxisAU   = 1.0;   // pl_orbsmax
     double eccentricity      = 0.0;   // pl_orbeccen
     double inclinationDeg    = 0.0;   // pl_orbincl
+    bool inclinationMeasured = false; // false = archive had no value, defaulted to coplanar (0 deg)
     double argPeriapsisDeg   = 0.0;   // pl_orblper   (argument of periapsis)
     double longAscNodeDeg    = 0.0;   // not in archive for most planets - default 0
     double periodDays        = 365.25; // pl_orbper

@@ -24,7 +24,10 @@ COLUMNS = [
     "pl_name", "hostname",
     "pl_orbper", "pl_orbsmax", "pl_orbeccen", "pl_orbincl", "pl_orblper",
     "pl_bmassj", "pl_radj",
-    "st_mass", "st_rad", "st_teff",
+    "pl_dens",       # bulk density, g/cm^3 - much more diagnostic of composition than radius alone
+    "pl_eqt",        # equilibrium temperature, K - informs whether an atmosphere could survive
+    "pl_insol",      # insolation flux, relative to Earth
+    "st_mass", "st_rad", "st_teff", "st_spectype",
     "sy_dist", "ra", "dec",
 ]
 

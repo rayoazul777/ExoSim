@@ -18,6 +18,8 @@ add_executable(ExoSim
     src/Dataset.cpp
     src/Renderer.cpp
     src/CrtPostProcess.cpp
+    src/PlanetClassifier.cpp
+    src/StarClassifier.cpp
 )
 
 target_include_directories(ExoSim PRIVATE src)

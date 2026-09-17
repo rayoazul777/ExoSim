@@ -17,11 +17,42 @@ public:
     // Uploads/replaces the line-loop vertices for one orbit ring (AU units).
     void setOrbitPath(size_t planetIndex, const std::vector<glm::vec3>& points);
 
+    // Frees all orbit ring buffers - call this before setOrbitPath-ing
+    // a freshly selected star system, so the old system's rings don't
+    // linger (and so leftover higher-indexed slots from a bigger
+    // previous system don't still draw).
+    void clearOrbits();
+
     // Draws all orbit rings + current planet positions.
     // viewProj: combined camera view*projection matrix.
     // planetPositions: current position (AU) per planet, same order as setOrbitPath calls.
     void render(const glm::mat4& viewProj,
                 const std::vector<glm::vec3>& planetPositions);
+
+    // Draws a single planet as a CRT-style wireframe globe (latitude/
+    // longitude grid lines over a unit sphere, transformed by `model`).
+    // Used by the planet detail view - a stylized model, not a
+    // to-scale rendering of the real planet's radius.
+    void renderPlanetDetail(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color);
+
+    // Draws the system's host star at the origin using the same
+    // wireframe-sphere primitive, sized (via `model`'s scale) from the
+    // star's real radius and colored by StarClassifier's spectral-type color.
+    void renderStar(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color);
+
+    // Draws a SOLID-shaded planet surface: a procedurally generated,
+    // stylized approximation (banded clouds for gas/ice giants, a
+    // cratered pattern for rocky ones) driven entirely by a shader - not
+    // a real image (no exoplanet has been imaged in this kind of detail).
+    // planetType matches PlanetType's int values (0=Unknown..5=GasGiant).
+    // `seed` varies the procedural pattern per planet; `timeSeconds`
+    // slowly animates cloud bands. Typically followed by a renderPlanetDetail
+    // call (with a very slightly larger `model` scale, e.g. *1.01, to avoid
+    // z-fighting) to lay the wireframe targeting-grid on top.
+    void renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model,
+                              const glm::vec3& viewPosWorld, int planetType,
+                              const glm::vec3& baseColor, const glm::vec3& accentColor,
+                              float timeSeconds, float seed);
 
 private:
     GLuint m_lineShader = 0;
@@ -31,6 +62,18 @@ private:
     std::vector<OrbitBuffer> m_orbits;
 
     GLuint m_pointsVao = 0, m_pointsVbo = 0;
+
+    GLuint m_sphereVao = 0, m_sphereVbo = 0;
+    GLsizei m_sphereVertCount = 0;
+
+    // Solid-shaded UV sphere (triangles, with UVs) for the procedural
+    // planet surface pass - separate from the wireframe-only sphere above.
+    GLuint m_solidSphereVao = 0, m_solidSphereVbo = 0, m_solidSphereEbo = 0;
+    GLsizei m_solidSphereIndexCount = 0;
+    GLuint m_surfaceShader = 0;
+
+    void buildSphereWireframe();
+    void buildSolidSphereMesh();
 
     GLuint compileShader(GLenum type, const char* src);
     GLuint linkProgram(GLuint vs, GLuint fs);
