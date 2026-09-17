@@ -28,6 +28,7 @@ COLUMNS = [
     "pl_eqt",        # equilibrium temperature, K - informs whether an atmosphere could survive
     "pl_insol",      # insolation flux, relative to Earth
     "st_mass", "st_rad", "st_teff", "st_spectype",
+    "sy_snum",       # number of stars in the system - flags binaries/multiples
     "sy_dist", "ra", "dec",
 ]
 

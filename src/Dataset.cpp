@@ -70,6 +70,7 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
         p.starRadiusSolar = numOr(row, "st_rad", 0.0);
         p.starMassSolar = numOr(row, "st_mass", 0.0);
         p.starSpectralType = strOr(row, "st_spectype", "");
+        p.numStarsInSystem = static_cast<int>(numOr(row, "sy_snum", 1.0));
 
         planets.push_back(std::move(p));
     }
@@ -114,6 +115,39 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
         p.starSpectralType = "G2 V";
         out.push_back(std::move(p));
     }
+
+    // Real, well-documented moons (approximate orbital distance in units
+    // of the parent planet's own radius, and orbital period in days).
+    // Mercury and Venus genuinely have none, so they're simply omitted.
+    auto findPlanet = [&out](const char* name) -> PlanetRecord& {
+        for (auto& p : out) if (p.name == name) return p;
+        return out[0]; // unreachable given the seeds above
+    };
+    findPlanet("Earth").moons = {
+        {"Moon", 60.3, 27.32, true},
+    };
+    findPlanet("Mars").moons = {
+        {"Phobos", 2.76, 0.319, true},
+        {"Deimos", 6.92, 1.263, true},
+    };
+    findPlanet("Jupiter").moons = {
+        {"Io", 5.9, 1.77, true},
+        {"Europa", 9.4, 3.55, true},
+        {"Ganymede", 15.0, 7.15, true},
+        {"Callisto", 26.3, 16.69, true},
+    };
+    findPlanet("Saturn").moons = {
+        {"Titan", 20.3, 15.95, true},
+        {"Rhea", 8.75, 4.52, true},
+    };
+    findPlanet("Uranus").moons = {
+        {"Titania", 17.6, 8.71, true},
+        {"Oberon", 23.6, 13.46, true},
+    };
+    findPlanet("Neptune").moons = {
+        {"Triton", 14.3, 5.877, true}, // orbits retrograde in reality; direction isn't modeled here
+    };
+
     return out;
 }
 
@@ -135,6 +169,7 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
             sys.starRadiusSolar = planets[i].starRadiusSolar;
             sys.starMassSolar = planets[i].starMassSolar;
             sys.starSpectralType = planets[i].starSpectralType;
+            sys.numStars = planets[i].numStarsInSystem;
             systems.push_back(std::move(sys));
         } else {
             it->planetIndices.push_back(i);

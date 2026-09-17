@@ -51,7 +51,9 @@ namespace {
         float yaw = 0.6f;
         float pitch = 0.45f;
         float systemDistance = 20.0f;
+        float systemDistanceTarget = 20.0f; // eased toward on system switch / scale change
         float planetDistance = 3.0f;
+        float planetDistanceTarget = 3.0f;
     };
     CameraState g_cam;
 
@@ -91,11 +93,14 @@ namespace {
         ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
         if (ImGui::GetIO().WantCaptureMouse) return;
 
-        float& dist = (g_viewMode == ViewMode::PlanetDetail) ? g_cam.planetDistance : g_cam.systemDistance;
+        bool detail = (g_viewMode == ViewMode::PlanetDetail);
+        float& dist = detail ? g_cam.planetDistance : g_cam.systemDistance;
+        float& target = detail ? g_cam.planetDistanceTarget : g_cam.systemDistanceTarget;
         dist *= std::pow(0.9f, static_cast<float>(yoffset));
-        float minD = (g_viewMode == ViewMode::PlanetDetail) ? 1.05f : 0.5f;
-        float maxD = (g_viewMode == ViewMode::PlanetDetail) ? 30.0f : 20000.0f;
+        float minD = detail ? 1.05f : 0.5f;
+        float maxD = detail ? 30.0f : 20000.0f;
         dist = std::clamp(dist, minD, maxD);
+        target = dist; // manual zoom is instant - only programmatic changes (system switch) ease in
     }
 
     glm::vec3 orbitCameraEye(float distance) {
@@ -131,6 +136,39 @@ namespace {
         auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
             [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
         return it != haystack.end();
+    }
+
+    // NASA's Exoplanet Archive contains no confirmed exomoon detections
+    // (only a small handful of disputed, unconfirmed candidates exist in
+    // the literature, system-wide). So for any Archive-loaded planet, this
+    // generates a deterministic set of purely illustrative "candidate"
+    // moons for visualization - never real data, always labeled as such
+    // wherever it's shown. Count and placement are seeded from the
+    // planet's name (via `seed`) so the same planet always shows the same
+    // illustrative moons, and biased loosely by composition (gas/ice
+    // giants get more, in keeping with the solar-system pattern).
+    std::vector<MoonRecord> generateSpeculativeMoons(PlanetType type, float seed) {
+        int count = 0;
+        switch (type) {
+            case PlanetType::GasGiant:    count = 2 + (static_cast<int>(seed) % 3); break; // 2-4
+            case PlanetType::IceGiant:    count = 1 + (static_cast<int>(seed) % 3); break; // 1-3
+            case PlanetType::MiniNeptune: count = 1 + (static_cast<int>(seed) % 2); break; // 1-2
+            case PlanetType::SuperEarth:  count = static_cast<int>(seed) % 2; break;       // 0-1
+            case PlanetType::Rocky:       count = static_cast<int>(seed) % 2; break;       // 0-1
+            default:                      count = 0; break;
+        }
+
+        std::vector<MoonRecord> moons;
+        for (int i = 0; i < count; ++i) {
+            MoonRecord m;
+            m.name = "Candidate " + std::string(1, static_cast<char>('I' + i)); // "Candidate I", "II", ...
+            float variety = std::fmod(seed * (static_cast<float>(i) + 1.7f), 23.0f);
+            m.orbitRadiusPlanetRadii = 3.0 + variety;      // purely illustrative spacing
+            m.orbitPeriodDays = 2.0 + variety * 1.5;       // purely illustrative, not physically derived
+            m.isReal = false;
+            moons.push_back(m);
+        }
+        return moons;
     }
 }
 
@@ -204,18 +242,29 @@ int main() {
     PlanetClassification detailClassification;
     float planetSpinAngle = 0.0f;
     float detailSurfaceSeed = 0.0f; // varies the procedural pattern per planet
+    std::vector<MoonRecord> detailMoons;
+    bool detailMoonsAreReal = false; // true only for the built-in demo solar system
 
     // Current system's star (recomputed whenever the selected system changes).
     StarClassification currentStar;
     float starDisplayRadius = 0.05f; // in the same display-space units as orbit rings
 
+    // Reference-distance "guide rings" shown only when log-scale is on, so
+    // the compression doesn't silently imply orbits are literally that
+    // close together. Each entry is a real AU value plus its precomputed
+    // display-space circle.
+    struct GuideRing { double realAU; std::vector<glm::vec3> points; };
+    std::vector<GuideRing> guideRings;
+
     constexpr double kSolarRadiusAU = 0.00465047; // 1 solar radius, in AU
 
-    // Rebuilds the orbit-ring geometry, star classification/size, and
-    // camera fit for one star system. Called on startup, on system
-    // switch, and whenever log-scale is toggled (since ring geometry
-    // depends on it).
-    auto selectSystem = [&](int sysIdx) {
+    // Rebuilds the orbit-ring geometry, star classification/size, guide
+    // rings, and camera fit for one star system. Called on startup, on
+    // system switch, and whenever log-scale is toggled (since ring
+    // geometry depends on it). `snap` jumps the camera straight to the
+    // new distance instead of easing - used only for the very first call,
+    // so the view doesn't animate in from nothing on startup.
+    auto selectSystem = [&](int sysIdx, bool snap = false) {
         renderer.clearOrbits();
         const StarSystem& sys = systems[sysIdx];
         double maxA = 0.0;
@@ -249,10 +298,31 @@ int main() {
         starDisplayRadius = static_cast<float>(std::min(exaggerated, minDisplay * 0.3));
         starDisplayRadius = std::max(starDisplayRadius, 0.01f);
 
-        g_cam.systemDistance = static_cast<float>(std::max(maxDisplay, 0.5)) * 2.5f;
+        // Guide rings: only meaningful (and only drawn) with log-scale on,
+        // since without it, distance in the view already IS real AU.
+        guideRings.clear();
+        if (logScaleEnabled) {
+            for (double refAU : {1.0, 10.0, 100.0, 1000.0}) {
+                if (refAU < maxA * 0.05 || refAU > maxA * 20.0) continue; // skip irrelevant scales
+                GuideRing gr;
+                gr.realAU = refAU;
+                double r = displayMagnitude(refAU, true);
+                constexpr int kRingSegs = 96;
+                for (int s = 0; s <= kRingSegs; ++s) {
+                    double phi = 2.0 * 3.14159265358979323846 * s / kRingSegs;
+                    gr.points.emplace_back(static_cast<float>(r * std::cos(phi)), 0.0f, static_cast<float>(r * std::sin(phi)));
+                }
+                guideRings.push_back(std::move(gr));
+                if (guideRings.size() >= 3) break; // keep it uncluttered
+            }
+        }
+
+        float fitDistance = static_cast<float>(std::max(maxDisplay, 0.5)) * 2.5f;
+        g_cam.systemDistanceTarget = fitDistance;
+        if (snap) g_cam.systemDistance = fitDistance;
     };
 
-    selectSystem(currentSystemIndex);
+    selectSystem(currentSystemIndex, /*snap=*/true);
 
     float simSpeedDaysPerSecond = 5.0f;
     float simTimeDays = 0.0f;
@@ -266,6 +336,12 @@ int main() {
         lastTime = now;
         simTimeDays += dt * simSpeedDaysPerSecond;
         planetSpinAngle += dt * 0.4f;
+
+        // Ease the system-view camera distance toward its target rather
+        // than snapping - matters most when switching systems, since
+        // scale can differ by orders of magnitude between them.
+        float easeAmount = 1.0f - std::exp(-dt * 8.0f);
+        g_cam.systemDistance += (g_cam.systemDistanceTarget - g_cam.systemDistance) * easeAmount;
 
         crt.resize(g_width, g_height);
 
@@ -295,6 +371,10 @@ int main() {
 
             glm::mat4 starModel = glm::scale(glm::mat4(1.0f), glm::vec3(starDisplayRadius));
             renderer.renderStar(viewProj, starModel, currentStar.color);
+
+            for (const auto& gr : guideRings) {
+                renderer.renderAuxiliaryRing(viewProj, gr.points, glm::vec3(0.5f, 0.5f, 0.55f), 0.25f);
+            }
         } else {
             eye = orbitCameraEye(g_cam.planetDistance);
             view = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0, 1, 0));
@@ -312,6 +392,34 @@ int main() {
             // it doesn't z-fight with the solid surface underneath.
             glm::mat4 gridModel = glm::scale(model, glm::vec3(1.01f));
             renderer.renderPlanetDetail(viewProj, gridModel, phosphorGreen * 0.8f);
+
+            // Moons: real ones for the demo solar system, otherwise
+            // speculative/illustrative ones (see generateSpeculativeMoons).
+            // Distances are compressed with a log curve into a viewable
+            // range - real moon distances (tens of planet-radii) would
+            // otherwise put them far outside the camera's usual zoom range.
+            for (size_t mi = 0; mi < detailMoons.size(); ++mi) {
+                const MoonRecord& moon = detailMoons[mi];
+                float dispR = 1.3f + 0.9f * std::log10(1.0f + static_cast<float>(moon.orbitRadiusPlanetRadii));
+                float speed = 0.5f / dispR; // closer moons orbit faster, stylized not physical
+                float phase = static_cast<float>(mi) * 2.1f + detailSurfaceSeed * 0.01f;
+                float angle = static_cast<float>(now) * speed + phase;
+                glm::vec3 moonPos(dispR * std::cos(angle), 0.0f, dispR * std::sin(angle));
+
+                glm::mat4 moonModel = glm::translate(glm::mat4(1.0f), moonPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.12f));
+                glm::vec3 moonColor = moon.isReal ? glm::vec3(0.8f, 0.85f, 0.95f) : glm::vec3(0.6f, 0.6f, 0.65f);
+                float moonAlpha = moon.isReal ? 0.7f : 0.4f; // dimmer for speculative ones
+                renderer.renderPlanetDetail(viewProj, moonModel, moonColor, moonAlpha);
+
+                // Faint orbit path guide.
+                std::vector<glm::vec3> orbitPts;
+                constexpr int kOrbitSegs = 48;
+                for (int s = 0; s <= kOrbitSegs; ++s) {
+                    float p = 2.0f * 3.14159265f * s / kOrbitSegs;
+                    orbitPts.emplace_back(dispR * std::cos(p), 0.0f, dispR * std::sin(p));
+                }
+                renderer.renderAuxiliaryRing(viewProj, orbitPts, moonColor, moonAlpha * 0.4f);
+            }
         }
 
         crt.endSceneAndPresent(static_cast<float>(now));
@@ -332,6 +440,13 @@ int main() {
                 selectSystem(currentSystemIndex);
             }
             ImGui::TextDisabled("(compresses large orbits so compact systems don't vanish)");
+            if (!guideRings.empty()) {
+                std::string legend = "Reference rings shown:";
+                for (const auto& gr : guideRings) {
+                    legend += " " + (gr.realAU >= 1000.0 ? std::to_string((int)(gr.realAU / 1000.0)) + "k" : std::to_string((int)gr.realAU)) + " AU";
+                }
+                ImGui::TextDisabled("%s", legend.c_str());
+            }
             if (ImGui::SliderFloat("Star size exaggeration", &starSizeExaggeration, 1.0f, 200.0f)) {
                 selectSystem(currentSystemIndex);
             }
@@ -346,6 +461,12 @@ int main() {
                 ImGui::Text("Radius: %.2f solar radii (measured)", currentStar.displayRadiusSolar);
             } else {
                 ImGui::TextDisabled("Radius: not measured (assumed Sun-like, 1.0 solar radii)");
+            }
+            if (currentSystem.numStars > 1) {
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
+                    "Multi-star system (%d stars) - only the primary is modeled here;", currentSystem.numStars);
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
+                    "companion star(s) aren't rendered.");
             }
             ImGui::Separator();
 
@@ -401,6 +522,13 @@ int main() {
                     detailClassification = PlanetClassifier::Classify(p);
                     detailSurfaceSeed = 0.0f;
                     for (char ch : p.name) detailSurfaceSeed += static_cast<float>(static_cast<unsigned char>(ch));
+                    if (!p.moons.empty()) {
+                        detailMoons = p.moons;
+                        detailMoonsAreReal = true;
+                    } else {
+                        detailMoons = generateSpeculativeMoons(detailClassification.type, detailSurfaceSeed);
+                        detailMoonsAreReal = false;
+                    }
                     g_viewMode = ViewMode::PlanetDetail;
                 }
             }
@@ -456,6 +584,24 @@ int main() {
             ImGui::TextDisabled("The surface/cloud pattern above is a procedural stylization");
             ImGui::TextDisabled("driven by that classification - not a real image. No exoplanet");
             ImGui::TextDisabled("has ever been directly imaged in this kind of visual detail.");
+
+            ImGui::Separator();
+            if (detailMoons.empty()) {
+                ImGui::TextDisabled("No moons shown for this planet.");
+            } else if (detailMoonsAreReal) {
+                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Moons (real, approximate known orbits):");
+                for (const auto& m : detailMoons) {
+                    ImGui::BulletText("%s - orbital period ~%.2f days", m.name.c_str(), m.orbitPeriodDays);
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "No confirmed moons on record.");
+                ImGui::TextDisabled("The Archive doesn't include exomoon detections (only a couple");
+                ImGui::TextDisabled("of disputed candidates exist in the literature, system-wide).");
+                ImGui::TextDisabled("The moons below are illustrative placeholders only:");
+                for (const auto& m : detailMoons) {
+                    ImGui::BulletText("%s (speculative, not a real detection)", m.name.c_str());
+                }
+            }
 
             ImGui::Separator();
             if (ImGui::Button("Back to System View")) {

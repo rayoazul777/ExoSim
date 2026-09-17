@@ -30,9 +30,9 @@ ExoSim/
 
 > **If you fetched data before this update**: re-run `fetch_exoplanets.py` -
 > it now pulls a few more columns (density, equilibrium temperature,
-> stellar spectral type) that the star rendering and improved composition
-> estimates depend on. An old `exoplanets.json` will still load, just
-> without those refinements.
+> stellar spectral type, number of stars) that the star rendering, improved
+> composition estimates, and multi-star flag depend on. An old
+> `exoplanets.json` will still load, just without those refinements.
 
 ## 1. Get the real data
 
@@ -112,6 +112,31 @@ up: **Project > CMake Settings** and confirm
   everything else stays clearly labeled as a statistical estimate, since
   the Archive itself doesn't carry real atmosphere data for the vast
   majority of planets.
+- **Moons**: inspecting a planet also shows any moons orbiting it as small
+  wireframe spheres (with faint orbit-guide rings). For the built-in demo
+  solar system these are **real** (Moon, the Galilean moons, Titan, etc.,
+  with approximate real orbital periods). For every Archive-loaded
+  exoplanet - which is effectively all of them - **no confirmed moons
+  exist in the data at all** (exomoons are extraordinarily hard to detect;
+  only a couple of disputed candidates exist in the literature, system-wide),
+  so illustrative "candidate" moons are generated instead, deterministically
+  seeded from the planet's name and loosely biased by its composition
+  (gas giants get more, in keeping with the solar-system pattern). These
+  are rendered dimmer and labeled "speculative, not a real detection"
+  everywhere they appear - the HUD never lets the two be confused.
+- **Distance-scale legend**: with log-scale on, up to three faint reference
+  rings (1/10/100/1000 AU, whichever are relevant to the current system)
+  are drawn and labeled in the HUD, so the compression doesn't silently
+  imply planets are closer together than they really are.
+- **Multi-star systems**: systems with more than one star (`sy_snum > 1`
+  in the Archive) are flagged in the HUD. This build still only models and
+  renders the primary star - companion stars aren't fetched or drawn -
+  so circumbinary systems will look like a single-star system with the
+  flag noting that's a simplification.
+- **Smoother camera**: switching star systems (or changing log-scale/star-
+  exaggeration settings) now eases the camera to its new distance over
+  a fraction of a second instead of snapping instantly, which used to be
+  jarring given how much scale varies between systems.
 - **Camera**: left-click-drag to orbit, scroll to zoom. Works the same in both
   System view and Planet Detail view (each remembers its own zoom level).
 - **System view**: search box + "min planets" slider filter the star-system
@@ -141,18 +166,17 @@ up: **Project > CMake Settings** and confirm
 
 ## Where to go next
 
-- **Smooth camera transitions**: switching star systems or entering/leaving
-  Planet Detail currently snaps the camera distance instantly since scales
-  differ so much between systems - interpolating over a fraction of a second
-  would feel less jarring.
-- **Scale legend**: with log-scale distances on, it's worth adding a small
-  on-screen note of the compression so the view doesn't imply orbits are
-  literally that close together.
-- **Real atmosphere data**: a small number of well-studied exoplanets do have
-  published spectroscopy (JWST, Hubble). Cross-referencing those against a
-  curated list and showing real data (clearly marked as such, distinct from
-  the estimated majority) would be a nice enhancement for the handful where
-  it exists.
-- **Multi-star systems**: some Archive entries are circumbinary or otherwise
-  more complex than one star + orbiting planets - the current grouping
-  treats every row as a simple single-star system.
+- **Render actual companion stars**: multi-star systems are flagged now,
+  but only the primary is drawn. Fetching companion star separation/mass
+  (from the Archive's `stellarhosts` table, which this simplified pipeline
+  doesn't currently query) and rendering a second star at the right offset
+  would make circumbinary systems visually accurate rather than just flagged.
+- **Moon orbital inclination/eccentricity**: both real and speculative
+  moons currently orbit flat in the planet's equatorial plane for
+  simplicity - real moons (and any real exomoons, if ever confirmed) can
+  have inclined or eccentric orbits.
+- **Persist speculative moon seeds across the fetched dataset**: right now
+  speculative moons are generated fresh each time you inspect a planet
+  (deterministically, from a name hash), which is fine for consistency but
+  means they aren't inspectable/filterable the way real data is - could be
+  worth precomputing and caching them if that becomes useful.

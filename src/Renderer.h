@@ -32,13 +32,23 @@ public:
     // Draws a single planet as a CRT-style wireframe globe (latitude/
     // longitude grid lines over a unit sphere, transformed by `model`).
     // Used by the planet detail view - a stylized model, not a
-    // to-scale rendering of the real planet's radius.
-    void renderPlanetDetail(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color);
+    // to-scale rendering of the real planet's radius. `alpha` defaults to
+    // the original fixed look; lower it (e.g. for speculative moons) to
+    // visually distinguish less-certain content.
+    void renderPlanetDetail(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color, float alpha = 0.55f);
 
     // Draws the system's host star at the origin using the same
     // wireframe-sphere primitive, sized (via `model`'s scale) from the
     // star's real radius and colored by StarClassifier's spectral-type color.
     void renderStar(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color);
+
+    // Draws one ad-hoc line loop (e.g. a distance-reference ring, or a
+    // moon's orbit path) from an explicit point list, at the given color
+    // and alpha. Builds and tears down a scratch buffer each call - fine
+    // for the handful of these drawn per frame, avoids persistent buffer
+    // bookkeeping for something this infrequent.
+    void renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                              const glm::vec3& color, float alpha);
 
     // Draws a SOLID-shaded planet surface: a procedurally generated,
     // stylized approximation (banded clouds for gas/ice giants, a

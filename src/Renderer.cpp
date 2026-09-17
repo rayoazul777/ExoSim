@@ -14,7 +14,8 @@ const char* kLineFS = R"(
 #version 330 core
 out vec4 FragColor;
 uniform vec3 uColor;
-void main() { FragColor = vec4(uColor, 0.55); }
+uniform float uAlpha;
+void main() { FragColor = vec4(uColor, uAlpha); }
 )";
 
 const char* kPointVS = R"(
@@ -396,6 +397,7 @@ void Renderer::render(const glm::mat4& viewProj, const std::vector<glm::vec3>& p
     GLint locColor = glGetUniformLocation(m_lineShader, "uColor");
     glUniformMatrix4fv(locVP, 1, GL_FALSE, &viewProj[0][0]);
     glUniform3f(locColor, 0.15f, 0.95f, 0.55f); // phosphor green
+    glUniform1f(glGetUniformLocation(m_lineShader, "uAlpha"), 0.55f);
 
     for (auto& o : m_orbits) {
         if (o.count == 0) continue;
@@ -424,11 +426,12 @@ void Renderer::render(const glm::mat4& viewProj, const std::vector<glm::vec3>& p
     glBindVertexArray(0);
 }
 
-void Renderer::renderPlanetDetail(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color) {
+void Renderer::renderPlanetDetail(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& color, float alpha) {
     glUseProgram(m_lineShader);
     glm::mat4 mvp = viewProj * model;
     glUniformMatrix4fv(glGetUniformLocation(m_lineShader, "uViewProj"), 1, GL_FALSE, &mvp[0][0]);
     glUniform3f(glGetUniformLocation(m_lineShader, "uColor"), color.r, color.g, color.b);
+    glUniform1f(glGetUniformLocation(m_lineShader, "uAlpha"), alpha);
 
     glBindVertexArray(m_sphereVao);
     glDrawArrays(GL_LINES, 0, m_sphereVertCount);
@@ -461,4 +464,28 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
     glBindVertexArray(m_solidSphereVao);
     glDrawElements(GL_TRIANGLES, m_solidSphereIndexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+}
+
+void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                                    const glm::vec3& color, float alpha) {
+    if (points.size() < 2) return;
+
+    GLuint vao = 0, vbo = 0;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, points.size() * sizeof(glm::vec3), points.data(), GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+    glUseProgram(m_lineShader);
+    glUniformMatrix4fv(glGetUniformLocation(m_lineShader, "uViewProj"), 1, GL_FALSE, &viewProj[0][0]);
+    glUniform3f(glGetUniformLocation(m_lineShader, "uColor"), color.r, color.g, color.b);
+    glUniform1f(glGetUniformLocation(m_lineShader, "uAlpha"), alpha);
+    glDrawArrays(GL_LINE_LOOP, 0, static_cast<GLsizei>(points.size()));
+
+    glBindVertexArray(0);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
 }

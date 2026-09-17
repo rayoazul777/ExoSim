@@ -3,6 +3,20 @@
 #include <vector>
 #include "KeplerOrbit.h"
 
+// A moon of a planet. Real values are only populated for the built-in
+// demo solar system, where orbital data is genuinely well-known. NASA's
+// Exoplanet Archive does not include exomoon detections (only a
+// small handful of disputed, unconfirmed candidates exist in the
+// literature system-wide) - moons for Archive-loaded planets are
+// generated speculatively at the UI layer for illustration only, never
+// stored here as if they were real, and isReal distinguishes the two.
+struct MoonRecord {
+    std::string name;
+    double orbitRadiusPlanetRadii = 0.0; // distance from planet, in units of the planet's own radius
+    double orbitPeriodDays = 0.0;
+    bool isReal = false;
+};
+
 struct PlanetRecord {
     std::string name;
     std::string hostStar;
@@ -24,6 +38,11 @@ struct PlanetRecord {
     double starRadiusSolar = 0.0;   // st_rad, solar radii (0 = not measured)
     double starMassSolar = 0.0;     // st_mass, solar masses (0 = not measured)
     std::string starSpectralType;   // st_spectype, e.g. "G2 V" (often empty)
+    int numStarsInSystem = 1;       // sy_snum (>1 = binary/multiple star system)
+
+    // Only populated for the built-in demo solar system - see MoonRecord's
+    // comment above for why Archive-loaded planets don't carry real data here.
+    std::vector<MoonRecord> moons;
 };
 
 // A single real star system: one host star plus the indices (into the
@@ -39,6 +58,7 @@ struct StarSystem {
     double starRadiusSolar = 0.0;
     double starMassSolar = 0.0;
     std::string starSpectralType;
+    int numStars = 1;
 };
 
 class Dataset {
