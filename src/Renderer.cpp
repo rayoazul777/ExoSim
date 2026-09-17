@@ -80,6 +80,18 @@ uniform float uSeed;
 uniform int uPlanetType; // 0=Unknown 1=Rocky 2=SuperEarth 3=MiniNeptune 4=IceGiant 5=GasGiant
 uniform vec3 uViewPosWorld;
 
+// Known-appearance path (only ever used for our own Solar System's
+// planets - see SolarSystemAppearance). When uIsKnownBody is 0, none of
+// these matter and the generic classification-driven path below runs.
+uniform int uIsKnownBody;
+uniform vec3 uSecondaryColor;
+uniform int uHasContinents;
+uniform int uHasPolarCaps;
+uniform int uHasSpot;
+uniform vec3 uSpotColor;
+uniform vec2 uSpotUV;
+uniform float uHazeIntensity;
+
 float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);
@@ -125,13 +137,54 @@ float cellDistance(vec2 p) {
     return minDist;
 }
 
+// Shortest wraparound distance between two points on a UV cylinder
+// (x wraps 0..1, y does not - fine for a small spot feature).
+float wrapDist(vec2 a, vec2 b) {
+    float dx = min(abs(a.x - b.x), 1.0 - abs(a.x - b.x));
+    float dy = a.y - b.y;
+    return length(vec2(dx, dy));
+}
+
 void main() {
     vec3 normal = normalize(vNormalWorld);
     vec3 viewDir = normalize(uViewPosWorld - vFragWorldPos);
 
     vec3 color = uBaseColor;
 
-    if (uPlanetType == 5 || uPlanetType == 4 || uPlanetType == 3) {
+    if (uIsKnownBody == 1) {
+        // Real Solar System planet: banded blend of primary/secondary,
+        // then layer on whichever real features this planet has.
+        float bandNoise = fbm(vec2(vUV.x * 4.0, vUV.y * 9.0) + uSeed) * 0.18;
+        float band = sin((vUV.y + bandNoise) * 22.0 + uTime * 0.04);
+        float bandMix = smoothstep(-1.0, 1.0, band);
+        color = mix(uBaseColor, uSecondaryColor, bandMix * 0.6);
+
+        if (uHasContinents == 1) {
+            // Earth: fbm as a land/ocean mask instead of horizontal bands.
+            float landMask = fbm(vUV * 5.0 + uSeed * 0.3);
+            float landEdge = smoothstep(0.42, 0.5, landMask);
+            color = mix(uBaseColor, uSecondaryColor, landEdge);
+            float clouds = fbm(vUV * 8.0 + vec2(uTime * 0.015, 0.0)) * 0.4;
+            color += vec3(clouds * 0.12);
+        }
+
+        if (uHasPolarCaps == 1) {
+            float poleDist = min(vUV.y, 1.0 - vUV.y);
+            float cap = smoothstep(0.12, 0.03, poleDist);
+            color = mix(color, vec3(0.93, 0.94, 0.97), cap);
+        }
+
+        if (uHasSpot == 1) {
+            float d = wrapDist(vUV, uSpotUV);
+            float spotMask = smoothstep(0.10, 0.05, d);
+            color = mix(color, uSpotColor, spotMask);
+        }
+
+        if (uHazeIntensity > 0.0) {
+            float haze = fbm(vUV * 6.0 + vec2(uTime * 0.03, 0.0));
+            color = mix(color, uBaseColor * 1.25, haze * uHazeIntensity);
+        }
+    } else if (uPlanetType == 5 || uPlanetType == 4 || uPlanetType == 3) {
         // Gas giant / ice giant / mini-Neptune: horizontal cloud bands,
         // slowly animated, with a bit of turbulent wobble in the band edges.
         float turbulence = fbm(vec2(vUV.x * 5.0, vUV.y * 18.0) + uSeed) * 0.18;
@@ -168,6 +221,47 @@ void main() {
     color += uAccentColor * rimGlow * 0.35;
 
     FragColor = vec4(color, 1.0);
+}
+)";
+
+const char* kRingVS = R"(
+#version 330 core
+layout(location = 0) in vec2 aDir;    // unit-circle direction (cos, sin)
+layout(location = 1) in float aRadial; // 0 = inner rim, 1 = outer rim
+uniform mat4 uMVP;
+uniform float uInnerRadius;
+uniform float uOuterRadius;
+out float vRadial;
+void main() {
+    float r = mix(uInnerRadius, uOuterRadius, aRadial);
+    vec3 localPos = vec3(aDir.x * r, 0.0, aDir.y * r);
+    vRadial = aRadial;
+    gl_Position = uMVP * vec4(localPos, 1.0);
+}
+)";
+
+// Stylized ring banding - a radial-only pattern (real ring gaps like
+// Saturn's Cassini Division ARE purely radial, so this is physically
+// reasonable in structure even though the exact band positions here are
+// illustrative, not measured).
+const char* kRingFS = R"(
+#version 330 core
+in float vRadial;
+out vec4 FragColor;
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uSeed;
+
+float hash1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+
+void main() {
+    float r = vRadial;
+    float band = sin(r * 40.0 + uSeed) * 0.5 + 0.5;
+    float gapMask = smoothstep(0.15, 0.35, abs(sin(r * 23.0 + uSeed * 3.1)));
+    float shade = mix(0.55, 1.0, band) * mix(0.5, 1.0, gapMask);
+
+    float edgeFade = smoothstep(0.0, 0.06, r) * smoothstep(1.0, 0.94, r);
+    FragColor = vec4(uColor * shade, uOpacity * edgeFade);
 }
 )";
 
@@ -217,16 +311,21 @@ bool Renderer::init() {
     GLuint sfs = compileShader(GL_FRAGMENT_SHADER, kSurfaceFS);
     m_surfaceShader = linkProgram(svs, sfs);
 
+    GLuint rvs = compileShader(GL_VERTEX_SHADER, kRingVS);
+    GLuint rfs = compileShader(GL_FRAGMENT_SHADER, kRingFS);
+    m_ringShader = linkProgram(rvs, rfs);
+
     glGenVertexArrays(1, &m_pointsVao);
     glGenBuffers(1, &m_pointsVbo);
 
     buildSphereWireframe();
     buildSolidSphereMesh();
+    buildRingMesh();
 
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0;
+    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0;
 }
 
 void Renderer::buildSphereWireframe() {
@@ -347,6 +446,39 @@ void Renderer::buildSolidSphereMesh() {
     m_solidSphereIndexCount = static_cast<GLsizei>(indices.size());
 }
 
+void Renderer::buildRingMesh() {
+    // Unit annulus as a triangle strip: for each angular segment, emit an
+    // inner-rim vertex (radial=0) then an outer-rim vertex (radial=1).
+    // Actual inner/outer radii are applied in the vertex shader via
+    // uniforms, so this one mesh is reused for every ring drawn.
+    constexpr int kSegs = 96;
+    constexpr float kPi = 3.14159265358979323846f;
+
+    std::vector<float> verts; // dirX, dirY, radialFlag per vertex
+    verts.reserve((kSegs + 1) * 2 * 3);
+
+    for (int s = 0; s <= kSegs; ++s) {
+        float phi = 2.0f * kPi * static_cast<float>(s) / static_cast<float>(kSegs);
+        float dx = std::cos(phi);
+        float dy = std::sin(phi);
+        verts.push_back(dx); verts.push_back(dy); verts.push_back(0.0f); // inner
+        verts.push_back(dx); verts.push_back(dy); verts.push_back(1.0f); // outer
+    }
+
+    glGenVertexArrays(1, &m_ringVao);
+    glGenBuffers(1, &m_ringVbo);
+    glBindVertexArray(m_ringVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_ringVbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)(2 * sizeof(float)));
+    glBindVertexArray(0);
+
+    m_ringVertCount = static_cast<GLsizei>(verts.size() / 3);
+}
+
 void Renderer::shutdown() {
     for (auto& o : m_orbits) {
         glDeleteBuffers(1, &o.vbo);
@@ -360,6 +492,9 @@ void Renderer::shutdown() {
     glDeleteBuffers(1, &m_solidSphereVbo);
     glDeleteBuffers(1, &m_solidSphereEbo);
     glDeleteVertexArrays(1, &m_solidSphereVao);
+    glDeleteBuffers(1, &m_ringVbo);
+    glDeleteVertexArrays(1, &m_ringVao);
+    glDeleteProgram(m_ringShader);
     glDeleteProgram(m_surfaceShader);
     glDeleteProgram(m_lineShader);
     glDeleteProgram(m_pointShader);
@@ -449,21 +584,63 @@ void Renderer::renderStar(const glm::mat4& viewProj, const glm::mat4& model, con
 void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model,
                                     const glm::vec3& viewPosWorld, int planetType,
                                     const glm::vec3& baseColor, const glm::vec3& accentColor,
-                                    float timeSeconds, float seed) {
+                                    float timeSeconds, float seed,
+                                    const PlanetAppearance* knownAppearance) {
     glUseProgram(m_surfaceShader);
     glm::mat4 mvp = viewProj * model;
     glUniformMatrix4fv(glGetUniformLocation(m_surfaceShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(m_surfaceShader, "uModel"), 1, GL_FALSE, &model[0][0]);
     glUniform3f(glGetUniformLocation(m_surfaceShader, "uViewPosWorld"), viewPosWorld.x, viewPosWorld.y, viewPosWorld.z);
-    glUniform3f(glGetUniformLocation(m_surfaceShader, "uBaseColor"), baseColor.r, baseColor.g, baseColor.b);
-    glUniform3f(glGetUniformLocation(m_surfaceShader, "uAccentColor"), accentColor.r, accentColor.g, accentColor.b);
     glUniform1f(glGetUniformLocation(m_surfaceShader, "uTime"), timeSeconds);
     glUniform1f(glGetUniformLocation(m_surfaceShader, "uSeed"), seed);
     glUniform1i(glGetUniformLocation(m_surfaceShader, "uPlanetType"), planetType);
+    glUniform3f(glGetUniformLocation(m_surfaceShader, "uAccentColor"), accentColor.r, accentColor.g, accentColor.b);
+
+    if (knownAppearance != nullptr) {
+        const PlanetAppearance& a = *knownAppearance;
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uIsKnownBody"), 1);
+        glUniform3f(glGetUniformLocation(m_surfaceShader, "uBaseColor"), a.primaryColor.r, a.primaryColor.g, a.primaryColor.b);
+        glUniform3f(glGetUniformLocation(m_surfaceShader, "uSecondaryColor"), a.secondaryColor.r, a.secondaryColor.g, a.secondaryColor.b);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasContinents"), a.hasContinents ? 1 : 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasPolarCaps"), a.hasPolarCaps ? 1 : 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasSpot"), a.hasGreatSpot ? 1 : 0);
+        glUniform3f(glGetUniformLocation(m_surfaceShader, "uSpotColor"), a.spotColor.r, a.spotColor.g, a.spotColor.b);
+        glUniform2f(glGetUniformLocation(m_surfaceShader, "uSpotUV"), a.spotLongitude, a.spotLatitude);
+        glUniform1f(glGetUniformLocation(m_surfaceShader, "uHazeIntensity"), a.hazeIntensity);
+    } else {
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uIsKnownBody"), 0);
+        glUniform3f(glGetUniformLocation(m_surfaceShader, "uBaseColor"), baseColor.r, baseColor.g, baseColor.b);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasContinents"), 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasPolarCaps"), 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasSpot"), 0);
+        glUniform1f(glGetUniformLocation(m_surfaceShader, "uHazeIntensity"), 0.0f);
+    }
 
     glBindVertexArray(m_solidSphereVao);
     glDrawElements(GL_TRIANGLES, m_solidSphereIndexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+}
+
+void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
+                                  float innerRadius, float outerRadius,
+                                  const glm::vec3& color, float opacity, float seed) {
+    glUseProgram(m_ringShader);
+    glm::mat4 mvp = viewProj * model;
+    glUniformMatrix4fv(glGetUniformLocation(m_ringShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uInnerRadius"), innerRadius);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uOuterRadius"), outerRadius);
+    glUniform3f(glGetUniformLocation(m_ringShader, "uColor"), color.r, color.g, color.b);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uOpacity"), opacity);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uSeed"), seed);
+
+    // Transparent geometry: test depth against the opaque planet (so the
+    // far half of the ring is correctly hidden behind it) but don't write
+    // depth (so it doesn't occlude itself or the wireframe grid drawn after).
+    glDepthMask(GL_FALSE);
+    glBindVertexArray(m_ringVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, m_ringVertCount);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
 }
 
 void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,

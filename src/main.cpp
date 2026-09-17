@@ -35,6 +35,7 @@
 #include "CrtPostProcess.h"
 #include "PlanetClassifier.h"
 #include "StarClassifier.h"
+#include "SolarSystemAppearance.h"
 
 namespace {
     int g_width = 1280, g_height = 800;
@@ -168,6 +169,8 @@ namespace {
             m.orbitPeriodDays = 2.0 + variety * 1.5;       // purely illustrative, not physically derived
             m.inclinationDeg = std::fmod(seed * (static_cast<float>(i) + 3.3f), 25.0f);   // illustrative
             m.eccentricity = std::fmod(seed * (static_cast<float>(i) + 1.1f), 28.0f) / 100.0; // illustrative, kept low
+            m.argPeriapsisDeg = std::fmod(seed * (static_cast<float>(i) + 5.7f), 360.0f);  // illustrative
+            m.longAscNodeDeg = std::fmod(seed * (static_cast<float>(i) + 7.9f), 360.0f);   // illustrative
             m.isReal = false;
             moons.push_back(m);
         }
@@ -258,6 +261,7 @@ int main() {
     // Planet detail view state.
     size_t detailPlanetGlobalIndex = 0;
     PlanetClassification detailClassification;
+    PlanetAppearance detailAppearance; // isKnown=false unless this is one of our own 8 Solar System planets
     float planetSpinAngle = 0.0f;
     float detailSurfaceSeed = 0.0f; // varies the procedural pattern per planet
     std::vector<MoonRecord> detailMoons;
@@ -287,8 +291,14 @@ int main() {
     // Position is always schematic (see StarComponent's comment) - the
     // Archive has no bulk separation field, so these are arranged evenly
     // around the primary rather than placed at any claimed real distance.
+    // They also slowly orbit the primary - real binaries DO orbit each
+    // other, but we have no real separation or period to animate from, so
+    // this uses a fixed illustrative angular speed. It exists purely so a
+    // multi-star system doesn't look like a frozen diagram; it is not a
+    // simulation of the real orbital dynamics.
     struct CompanionVisual {
-        glm::vec3 position;
+        float orbitRadius;
+        float baseAngle;
         glm::vec3 color;
         float displayRadius;
         bool hasData;
@@ -359,8 +369,8 @@ int main() {
             for (int i = 0; i < numCompanions; ++i) {
                 double angle = 2.0 * 3.14159265358979323846 * i / numCompanions;
                 CompanionVisual cv;
-                cv.position = glm::vec3(static_cast<float>(offsetRadius * std::cos(angle)), 0.0f,
-                                         static_cast<float>(offsetRadius * std::sin(angle)));
+                cv.orbitRadius = static_cast<float>(offsetRadius);
+                cv.baseAngle = static_cast<float>(angle);
                 const StarComponent& comp = sys.companions[i];
                 if (comp.hasData) {
                     StarClassification compCls = StarClassifier::Classify(comp.teffK, comp.radiusSolar, comp.spectralType);
@@ -455,7 +465,13 @@ int main() {
             renderer.renderStar(viewProj, starModel, currentStar.color);
 
             for (const auto& comp : currentCompanions) {
-                glm::mat4 compModel = glm::translate(glm::mat4(1.0f), comp.position)
+                // Stylized orbital speed (not physically derived - see
+                // CompanionVisual's comment). Slower for larger schematic
+                // orbits so a system with multiple companions doesn't look
+                // frantic.
+                float angle = comp.baseAngle + static_cast<float>(now) * (0.15f / comp.orbitRadius);
+                glm::vec3 compPos(comp.orbitRadius * std::cos(angle), 0.0f, comp.orbitRadius * std::sin(angle));
+                glm::mat4 compModel = glm::translate(glm::mat4(1.0f), compPos)
                                      * glm::scale(glm::mat4(1.0f), glm::vec3(comp.displayRadius));
                 renderer.renderStar(viewProj, compModel, comp.color);
             }
@@ -469,17 +485,34 @@ int main() {
             proj = glm::perspective(glm::radians(45.0f), (float)g_width / (float)g_height, 0.01f, 100.0f);
             glm::mat4 viewProj = proj * view;
 
-            glm::mat4 model = glm::rotate(glm::mat4(1.0f), planetSpinAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+            // Real axial tilt (e.g. Uranus rolling on its side) for known
+            // Solar System bodies; untilted for generic exoplanets, since
+            // we have no real obliquity data for those.
+            glm::mat4 tilt = detailAppearance.isKnown
+                ? glm::rotate(glm::mat4(1.0f), glm::radians(detailAppearance.axialTiltDeg), glm::vec3(0.0f, 0.0f, 1.0f))
+                : glm::mat4(1.0f);
+            glm::mat4 spin = glm::rotate(glm::mat4(1.0f), planetSpinAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::mat4 model = tilt * spin;
             const glm::vec3 phosphorGreen(0.15f, 0.95f, 0.55f); // matches the orbit-ring accent color
 
             renderer.renderPlanetSurface(viewProj, model, eye, static_cast<int>(detailClassification.type),
                                           detailClassification.displayColor, phosphorGreen,
-                                          static_cast<float>(now), detailSurfaceSeed);
+                                          static_cast<float>(now), detailSurfaceSeed,
+                                          detailAppearance.isKnown ? &detailAppearance : nullptr);
 
             // Wireframe targeting-grid overlay, very slightly inflated so
             // it doesn't z-fight with the solid surface underneath.
             glm::mat4 gridModel = glm::scale(model, glm::vec3(1.01f));
             renderer.renderPlanetDetail(viewProj, gridModel, phosphorGreen * 0.8f);
+
+            // Rings (Saturn, Uranus) - drawn in the SAME tilted plane as
+            // the planet (not spinning with it, since rings are
+            // azimuthally uniform and spin wouldn't be visible anyway).
+            if (detailAppearance.isKnown && detailAppearance.hasRings) {
+                renderer.renderPlanetRings(viewProj, tilt,
+                    detailAppearance.ringInnerRadius, detailAppearance.ringOuterRadius,
+                    detailAppearance.ringColor, detailAppearance.ringOpacity, detailSurfaceSeed);
+            }
 
             // Moons: real ones for the demo solar system, otherwise
             // speculative/illustrative ones (see generateSpeculativeMoons).
@@ -497,6 +530,8 @@ int main() {
                 moonElements.semiMajorAxisAU = dispR; // repurposed as a display-space distance, not real AU
                 moonElements.eccentricity = moon.eccentricity;
                 moonElements.inclinationDeg = moon.inclinationDeg;
+                moonElements.argPeriapsisDeg = moon.argPeriapsisDeg;
+                moonElements.longAscNodeDeg = moon.longAscNodeDeg;
                 moonElements.periodDays = std::max(moon.orbitPeriodDays, 0.1);
                 moonElements.meanAnomalyAtEpochDeg = static_cast<double>(mi) * 61.0 + detailSurfaceSeed;
                 KeplerOrbit moonOrbit(moonElements);
@@ -564,9 +599,9 @@ int main() {
             }
             if (currentSystem.numStars > 1) {
                 ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Multi-star system (%d stars).", currentSystem.numStars);
-                ImGui::TextDisabled("Companion position shown is schematic, not a real separation -");
-                ImGui::TextDisabled("the Archive has no bulk-queryable field for that. Color/type");
-                ImGui::TextDisabled("below IS real where the Archive has resolved it separately.");
+                ImGui::TextDisabled("Companion position and orbital motion shown are schematic, not");
+                ImGui::TextDisabled("a real separation or period - the Archive has no bulk field for");
+                ImGui::TextDisabled("either. Color/type below IS real where the Archive resolved it.");
                 for (const auto& comp : currentCompanions) {
                     ImGui::TextColored(ImVec4(comp.color.r, comp.color.g, comp.color.b, 1.0f),
                         "  Companion: %s", comp.label.c_str());
@@ -633,6 +668,7 @@ int main() {
                 if (ImGui::Button("Inspect Planet")) {
                     detailPlanetGlobalIndex = pIdx;
                     detailClassification = PlanetClassifier::Classify(p);
+                    detailAppearance = SolarSystemAppearance::Lookup(p.name);
                     detailSurfaceSeed = 0.0f;
                     for (char ch : p.name) detailSurfaceSeed += static_cast<float>(static_cast<unsigned char>(ch));
                     detailMoons = getMoonsForPlanet(pIdx);
@@ -649,7 +685,13 @@ int main() {
             ImGui::TextDisabled("Scroll to zoom in on the surface pattern below.");
             ImGui::Separator();
 
-            if (detailClassification.hasRealAtmosphereFindings) {
+            if (detailAppearance.isKnown) {
+                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "KNOWN APPEARANCE (real, well-photographed):");
+                ImGui::TextWrapped("Colors and features (bands, continents, polar caps, spots, "
+                                    "haze, rings, axial tilt) below reflect this planet's actual "
+                                    "documented look, not a statistical guess.");
+                ImGui::Separator();
+            } else if (detailClassification.hasRealAtmosphereFindings) {
                 ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "MEASURED (published spectroscopy):");
                 ImGui::TextWrapped("%s", detailClassification.realAtmosphereFindings.c_str());
                 ImGui::Separator();
@@ -686,12 +728,20 @@ int main() {
                 ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
                     "Estimated from mass only (no measured radius or density) - lower confidence.");
             }
-            ImGui::TextDisabled("Composition/atmosphere are statistical estimates from");
-            ImGui::TextDisabled("radius/mass, not direct measurements - the Archive rarely");
-            ImGui::TextDisabled("has spectroscopic data outside a handful of flagship targets.");
-            ImGui::TextDisabled("The surface/cloud pattern above is a procedural stylization");
-            ImGui::TextDisabled("driven by that classification - not a real image. No exoplanet");
-            ImGui::TextDisabled("has ever been directly imaged in this kind of visual detail.");
+
+            if (detailAppearance.isKnown) {
+                ImGui::TextDisabled("The classification/atmosphere lines above are still generated");
+                ImGui::TextDisabled("by the same density-based estimator used for exoplanets (it");
+                ImGui::TextDisabled("happens to check out here) - but the VISUAL above is real,");
+                ImGui::TextDisabled("not estimated, unlike every exoplanet in this app.");
+            } else {
+                ImGui::TextDisabled("Composition/atmosphere are statistical estimates from");
+                ImGui::TextDisabled("radius/mass, not direct measurements - the Archive rarely");
+                ImGui::TextDisabled("has spectroscopic data outside a handful of flagship targets.");
+                ImGui::TextDisabled("The surface/cloud pattern above is a procedural stylization");
+                ImGui::TextDisabled("driven by that classification - not a real image. No exoplanet");
+                ImGui::TextDisabled("has ever been directly imaged in this kind of visual detail.");
+            }
 
             ImGui::Separator();
             if (detailMoons.empty()) {

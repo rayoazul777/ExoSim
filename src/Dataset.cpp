@@ -138,33 +138,44 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
     // eccentricity). Mercury and Venus genuinely have none, so they're
     // simply omitted. Triton's real orbit is retrograde; direction isn't
     // modeled here, only its unusually high inclination is.
+    //
+    // Argument of periapsis / longitude of ascending node are left at 0
+    // for everything except the Moon, for two honest reasons: (1) most of
+    // these moons have inclinations near zero, where the ascending node
+    // is mathematically ill-defined (a real quirk of orbital elements,
+    // not a gap in our data), and (2) the ones that DO have a meaningful
+    // node (Phobos, Triton) precess fast enough that a single fixed
+    // number would misrepresent them as static. The Moon's values below
+    // are an approximate J2000-epoch snapshot - its node precesses a full
+    // circle roughly every 18.6 years and its periapsis every 8.85 years,
+    // so treat these as illustrative of typical magnitude, not live figures.
     auto findPlanet = [&out](const char* name) -> PlanetRecord& {
         for (auto& p : out) if (p.name == name) return p;
         return out[0]; // unreachable given the seeds above
     };
     findPlanet("Earth").moons = {
-        {"Moon", 60.3, 27.32, 5.14, 0.0549, true},
+        {"Moon", 60.3, 27.32, 5.14, 0.0549, 318.15, 125.08, true},
     };
     findPlanet("Mars").moons = {
-        {"Phobos", 2.76, 0.319, 1.08, 0.0151, true},
-        {"Deimos", 6.92, 1.263, 1.79, 0.00033, true},
+        {"Phobos", 2.76, 0.319, 1.08, 0.0151, 0.0, 0.0, true},
+        {"Deimos", 6.92, 1.263, 1.79, 0.00033, 0.0, 0.0, true},
     };
     findPlanet("Jupiter").moons = {
-        {"Io", 5.9, 1.77, 0.04, 0.0041, true},
-        {"Europa", 9.4, 3.55, 0.47, 0.009, true},
-        {"Ganymede", 15.0, 7.15, 0.20, 0.0013, true},
-        {"Callisto", 26.3, 16.69, 0.19, 0.0074, true},
+        {"Io", 5.9, 1.77, 0.04, 0.0041, 0.0, 0.0, true},
+        {"Europa", 9.4, 3.55, 0.47, 0.009, 0.0, 0.0, true},
+        {"Ganymede", 15.0, 7.15, 0.20, 0.0013, 0.0, 0.0, true},
+        {"Callisto", 26.3, 16.69, 0.19, 0.0074, 0.0, 0.0, true},
     };
     findPlanet("Saturn").moons = {
-        {"Titan", 20.3, 15.95, 0.35, 0.0288, true},
-        {"Rhea", 8.75, 4.52, 0.345, 0.001258, true},
+        {"Titan", 20.3, 15.95, 0.35, 0.0288, 0.0, 0.0, true},
+        {"Rhea", 8.75, 4.52, 0.345, 0.001258, 0.0, 0.0, true},
     };
     findPlanet("Uranus").moons = {
-        {"Titania", 17.6, 8.71, 0.34, 0.0011, true},
-        {"Oberon", 23.6, 13.46, 0.058, 0.0014, true},
+        {"Titania", 17.6, 8.71, 0.34, 0.0011, 0.0, 0.0, true},
+        {"Oberon", 23.6, 13.46, 0.058, 0.0014, 0.0, 0.0, true},
     };
     findPlanet("Neptune").moons = {
-        {"Triton", 14.3, 5.877, 157.0, 0.000016, true},
+        {"Triton", 14.3, 5.877, 157.0, 0.000016, 0.0, 0.0, true},
     };
 
     return out;

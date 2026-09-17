@@ -16,6 +16,8 @@ struct MoonRecord {
     double orbitPeriodDays = 0.0;
     double inclinationDeg = 0.0;         // real for demo moons (approximate), illustrative otherwise
     double eccentricity = 0.0;           // real for demo moons (approximate), illustrative otherwise
+    double argPeriapsisDeg = 0.0;        // real (approximate) where confidently known, else 0
+    double longAscNodeDeg = 0.0;         // real (approximate) where confidently known, else 0
     bool isReal = false;
 };
 

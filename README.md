@@ -10,19 +10,22 @@ Orbits are propagated from real Keplerian elements; the visual style
 ```
 ExoSim/
   CMakeLists.txt        - build config (CMake, works directly in VS2022)
-  vcpkg.json             - dependency manifest (glfw, glm, imgui, json, glad)
+  vcpkg.json             - dependency manifest (glfw, glm, imgui, json, glad, curl)
   data/
-    fetch_exoplanets.py  - pulls real data from the NASA Exoplanet Archive TAP API
-    exoplanets.json       - (generated - not checked in) the fetched dataset
+    fetch_exoplanets.py  - Python fetch script (pulls real Archive data via TAP)
+    exoplanets.json       - (generated - not checked in) the fetched planet dataset
+    stellar_hosts.json    - (generated - not checked in) real per-star companion data
+  tools/
+    fetch_data.cpp        - optional C++ equivalent of fetch_exoplanets.py (see below)
   src/
     main.cpp               - window/app loop, camera, ImGui HUD, view-mode switching
     KeplerOrbit.h/.cpp      - solves Kepler's equation, propagates orbit position
     Dataset.h/.cpp          - loads exoplanets.json, groups planets into StarSystems
     PlanetClassifier.h/.cpp - density/radius/mass-based composition estimates + curated real findings
     StarClassifier.h/.cpp   - spectral-type classification and color from stellar temperature
-    Renderer.h/.cpp         - minimal OpenGL renderer: orbits, planets, star,
-                              wireframe detail globe, and the procedural
-                              solid-surface shader pass
+    SolarSystemAppearance.h/.cpp - real known look (colors, rings, axial tilt) for our own 8 planets
+    Renderer.h/.cpp         - OpenGL renderer: orbits, planets, star, companions,
+                              wireframe detail globe, procedural surface shader, rings
     CrtPostProcess.h/.cpp   - offscreen framebuffer + CRT composite pass
   shaders/
     crt.frag               - scanlines / glow / vignette / barrel distortion
@@ -34,9 +37,34 @@ ExoSim/
 > won't render companion stars, falling back to the amber-text-only flag
 > from before.
 
-## 1. Get the real data
+## Fetching data: Python or C++
+
+`data/fetch_exoplanets.py` and `tools/fetch_data.cpp` do the exact same
+job - same TAP endpoint, same ADQL queries, same output files - pick
+whichever you'd rather run. **Neither is required by ExoSim.exe**: this is
+a one-time, offline data-prep step, and the app never invokes either
+script/tool or depends on Python being installed. The C++ version exists
+for anyone who'd rather keep the whole toolchain in one language, not
+because the Python version caused any actual problem.
+
+The C++ tool (`FetchData`, built alongside `ExoSim` by the same CMake
+project) also has a `--top-systems N` flag that prints the N systems with
+the most planets, found via a min-heap (see `PrintTopSystemsByPlanetCount`
+in `tools/fetch_data.cpp`) - the classic heap-based "top-K" selection
+algorithm, used here because it's a genuine fit (picking the K richest
+systems without sorting the whole multi-thousand-row dataset), not
+because the task needed a heap to work.
+
+```powershell
+# From your build output directory, next to ExoSim.exe:
+.\FetchData.exe --top-systems 10
+```
+
+## 1. Get the real data (Python version)
 
 You need Python 3.10+ with no extra packages (uses only the standard library).
+
+
 
 ```powershell
 cd ExoSim\data
@@ -128,11 +156,27 @@ up: **Project > CMake Settings** and confirm
   against repeated publications of the same star). Where the Archive only
   confirms a companion exists (`sy_snum`) without resolved properties, it's
   shown as a neutral gray "unknown companion" placeholder - never invented
-  data. **Position is always schematic** in both cases: the Archive has no
-  bulk-queryable field for real physical separation between components
-  (that mostly lives in individual discovery papers), so companions are
-  arranged evenly around the primary at a stylized, clearly-flagged
-  distance rather than a claimed real one.
+  data. **Position and orbital motion are always schematic** in both cases:
+  the Archive has no bulk-queryable field for real physical separation or
+  orbital period between components (that mostly lives in individual
+  discovery papers), so companions are arranged evenly around the primary
+  and slowly orbit it at an illustrative, clearly-flagged speed rather than
+  a claimed real one - it exists so a multi-star system doesn't look like
+  a frozen diagram, not to simulate real binary dynamics.
+- **Real appearance for our own planets**: when you inspect one of Sol's 8
+  planets, `SolarSystemAppearance` overrides the generic classification
+  shader with each planet's actual, well-photographed look - Earth's blue
+  oceans and green/brown continents, Jupiter's Great Red Spot, Mars' rusty
+  polar caps, Venus's obscuring haze, Neptune's Great Dark Spot - plus real
+  axial tilt (Uranus visibly "rolls on its side" at 97.8°, Venus spins
+  almost upside-down at 177.4°). **Saturn and Uranus render real rings**
+  (Saturn's prominent, Uranus's much fainter, matching their real relative
+  visibility) via a new flat-annulus ring shader with stylized radial
+  banding evoking gaps like the Cassini Division - the banding is stylized
+  since there's no simple bulk dataset of exact real gap positions, but the
+  ring's existence, relative size, and tilt are real. Every other planet in
+  the app (every actual exoplanet) still uses the honest procedural/
+  statistical look from before, since we have no real imagery to go on there.
 - **Moons now use real Kepler orbits**: both real (demo solar system) and
   speculative (Archive exoplanets) moons are propagated with the same
   `KeplerOrbit` math used for planets, so inclination and eccentricity
@@ -197,19 +241,25 @@ up: **Project > CMake Settings** and confirm
 
 ## Where to go next
 
-- **Real companion separation, if it ever becomes bulk-queryable**: this
-  build deliberately never claims a real physical distance for companion
-  stars, since the Archive doesn't expose one in its bulk API. If a future
-  Archive table (or a supplementary catalog) adds that, swapping the
-  schematic offset for a real one would be a straightforward change to
-  `selectSystem`'s companion-placement code in main.cpp.
-- **Moon argument of periapsis / ascending node**: moons currently use 0
-  for both (only inclination and eccentricity are modeled), so their tilt
-  is simplified relative to the real thing - full realism would need those
-  two additional real angles, which are readily available for our own
-  solar system's moons but weren't included yet for scope reasons.
-- **Binary star orbital motion**: companion stars are currently static
-  (no orbital motion around the system barycenter) - real binaries orbit
-  each other on timescales from years to millennia, which could be
-  animated the same way planets are, once/if real separation and period
-  data become available to drive it.
+- **Real companion separation**: still not implementable today - the
+  Archive doesn't expose a bulk physical/angular separation field, and I'm
+  not going to fabricate one. If a future Archive table (or a
+  supplementary catalog) adds it, swapping the schematic offset for a real
+  one would be a straightforward change to `selectSystem`'s companion-
+  placement code in main.cpp - the moon and companion orbital-motion code
+  already reuse `KeplerOrbit`, so real period/separation data would slot
+  in the same way real inclination/eccentricity did for moons.
+- **Ring gap positions**: Saturn and Uranus's rings are real (existence,
+  relative size, tilt), but the banding pattern inside them is a stylized
+  approximation, not real gap radii like the actual Cassini Division -
+  there's no simple bulk-queryable dataset of exact ring-gap positions to
+  draw from the way there is for orbital elements.
+- **Jupiter and Neptune's real (but very faint) rings** were deliberately
+  left out - they exist in reality but are so faint they're not part of
+  either planet's "known appearance" the way Saturn's or even Uranus's
+  are, so including them risked overstating their visual prominence.
+- **Extending SolarSystemAppearance to moons**: Titan's hazy orange
+  atmosphere, Io's volcanic surface, and Europa's icy cracks are all
+  well-photographed real features that currently render with the same
+  generic wireframe-dot look as every other moon (real or speculative) -
+  a natural next enhancement using the same pattern as the planets.

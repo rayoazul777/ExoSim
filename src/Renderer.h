@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include "SolarSystemAppearance.h"
 
 // Bare-bones GL 3.3 core renderer. Draws each orbit as a line loop
 // (precomputed ellipse points) and each planet as a GL_POINTS vertex,
@@ -59,10 +60,28 @@ public:
     // slowly animates cloud bands. Typically followed by a renderPlanetDetail
     // call (with a very slightly larger `model` scale, e.g. *1.01, to avoid
     // z-fighting) to lay the wireframe targeting-grid on top.
+    //
+    // `knownAppearance`: when non-null (only ever passed for our own 8
+    // Solar System planets - see SolarSystemAppearance), switches to a
+    // real-appearance rendering path (secondary-color bands, continents,
+    // polar caps, a great-spot feature, haze) instead of the generic
+    // classification-driven look, and planetType/baseColor are ignored.
     void renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model,
                               const glm::vec3& viewPosWorld, int planetType,
                               const glm::vec3& baseColor, const glm::vec3& accentColor,
-                              float timeSeconds, float seed);
+                              float timeSeconds, float seed,
+                              const PlanetAppearance* knownAppearance = nullptr);
+
+    // Draws a flat, semi-transparent ring annulus around a planet (e.g.
+    // Saturn) in the model's local XZ plane. innerRadius/outerRadius are
+    // relative to the planet's own display radius (1.0 = planet surface).
+    // The radial banding is a stylized approximation of the real
+    // structure (like Saturn's Cassini Division), not literal gap
+    // positions - there's no simple bulk dataset of exact real gap radii
+    // to draw from.
+    void renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
+                            float innerRadius, float outerRadius,
+                            const glm::vec3& color, float opacity, float seed);
 
 private:
     GLuint m_lineShader = 0;
@@ -82,8 +101,15 @@ private:
     GLsizei m_solidSphereIndexCount = 0;
     GLuint m_surfaceShader = 0;
 
+    // Flat unit annulus (inner=1, outer=1 in local space; actual radii
+    // are applied in the vertex shader via uniforms) for planet rings.
+    GLuint m_ringVao = 0, m_ringVbo = 0;
+    GLsizei m_ringVertCount = 0;
+    GLuint m_ringShader = 0;
+
     void buildSphereWireframe();
     void buildSolidSphereMesh();
+    void buildRingMesh();
 
     GLuint compileShader(GLenum type, const char* src);
     GLuint linkProgram(GLuint vs, GLuint fs);
