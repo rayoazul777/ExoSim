@@ -26,6 +26,18 @@
 //   --skip-star-catalog     Skip the VizieR/Hipparcos star catalog fetch
 //                           (~9,000-row CSV request to a third endpoint)
 
+// windows.h (pulled in transitively by <curl/curl.h> on Windows) defines
+// max/min as macros unless told not to - that silently mangles every
+// std::max/std::min call in this file (std::max({raI, deI, vmagI}) below
+// being the one that actually gets hit), which is why fixing THIS is what
+// clears a whole cascade of otherwise-nonsensical-looking parse errors.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
