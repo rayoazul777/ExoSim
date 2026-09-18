@@ -338,11 +338,14 @@ up: **Project > CMake Settings** and confirm
   simulated timescales and (with parallax) support real relative
   distances, neither of which this app currently uses since the skybox
   treats every star as infinitely distant and static.
-- **This session's VizieR integration is untested end-to-end** - I don't
-  have live internet access to actually execute the TAP query and inspect
-  a real response, so both fetch script/tool parse the CSV defensively
-  (skip malformed rows rather than crash) but the very first real run is
-  the actual test. If it comes back with zero stars, the likely culprit
-  is a header-column-naming mismatch - check the console output for the
-  actual header VizieR returned and compare it against `col_index()`'s
-  (Python) or `colIndex()`'s (C++) expected names.
+- **VizieR TLS certificate verification**: some Windows Python installs
+  can't verify `tapvizier.cds.unistra.fr`'s certificate chain (a local
+  trust-store gap - confirmed by an actual test run, where the other three
+  fetches succeeded fine and only this one hit
+  `CERTIFICATE_VERIFY_FAILED`). Both fetch script/tool now retry once
+  without verification, but ONLY after a genuine verification failure and
+  ONLY for this one request - a deliberate, narrow, and logged exception,
+  not a general policy. The proper long-term fix is `pip install certifi`
+  (Python) or keeping your OS's root certificates current; this fallback
+  exists so the fetch still works today without adding that as a required
+  dependency for a background starfield.

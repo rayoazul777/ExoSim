@@ -14,7 +14,9 @@ import argparse
 import csv
 import io
 import json
+import ssl
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -171,6 +173,42 @@ def fetch_star_catalog():
             if resp.status != 200:
                 raise RuntimeError(f"VizieR TAP request failed: HTTP {resp.status}")
             text = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as e:
+        # Some Windows Python installs can't verify tapvizier.cds.unistra.fr's
+        # certificate chain even though other HTTPS endpoints in this script
+        # work fine (a local trust-store gap, not a problem with the query or
+        # endpoint). Retry once without verification, ONLY after a genuine
+        # verification failure, and ONLY for this one request - this catalog
+        # is public, non-sensitive astronomical data, so that's a low-stakes
+        # trade for a background starfield. The proper fix is `pip install
+        # certifi` (Python often picks it up automatically) or updating your
+        # OS's root certificates - this fallback exists so the fetch still
+        # works today without adding that as a required dependency.
+        is_cert_error = isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError) \
+            or "CERTIFICATE_VERIFY_FAILED" in str(e)
+        if not is_cert_error:
+            print(f"WARNING: couldn't fetch the Hipparcos star catalog ({e}) - "
+                  f"the skybox will fall back to its procedural stars, but ExoSim still runs fine.",
+                  file=sys.stderr)
+            return []
+
+        print(f"WARNING: TLS certificate verification failed for VizieR ({e}) - retrying this "
+              f"one request without verification (see comments in fetch_star_catalog for why "
+              f"this is a reasonable fallback here, and how to fix it properly instead).",
+              file=sys.stderr)
+        try:
+            insecure_ctx = ssl.create_default_context()
+            insecure_ctx.check_hostname = False
+            insecure_ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(url, timeout=90, context=insecure_ctx) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"VizieR TAP request failed: HTTP {resp.status}")
+                text = resp.read().decode("utf-8", errors="replace")
+        except Exception as e2:
+            print(f"WARNING: retry without certificate verification also failed ({e2}) - "
+                  f"the skybox will fall back to its procedural stars, but ExoSim still runs fine.",
+                  file=sys.stderr)
+            return []
     except Exception as e:
         print(f"WARNING: couldn't fetch the Hipparcos star catalog ({e}) - "
               f"the skybox will fall back to its procedural stars, but ExoSim still runs fine.",

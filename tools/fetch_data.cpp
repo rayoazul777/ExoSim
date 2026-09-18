@@ -163,7 +163,10 @@ double JsonNumOrNull(const json& j, double fallback = 0.0) {
 // Same as HttpGetJson but returns the raw response body - used for
 // VizieR, which returns CSV here (confirmed working in published
 // examples) rather than JSON (unconfirmed for this specific service).
-std::string HttpGetText(CURL* curl, const std::string& url) {
+// verifySsl=false disables certificate verification for this one call -
+// only ever used as a scoped fallback after a genuine verification
+// failure (see FetchStarCatalog), not a default.
+std::string HttpGetText(CURL* curl, const std::string& url, bool verifySsl = true) {
     std::cout << "Requesting: " << url << "\n";
 
     std::string response;
@@ -172,8 +175,16 @@ std::string HttpGetText(CURL* curl, const std::string& url) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verifySsl ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verifySsl ? 2L : 0L);
 
     CURLcode res = curl_easy_perform(curl);
+    // Reset to the secure default immediately so an insecure fallback
+    // here never silently leaks into a later, unrelated request reusing
+    // this same CURL handle.
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
     if (res != CURLE_OK) {
         throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res));
     }
@@ -222,9 +233,32 @@ json FetchStarCatalog(CURL* curl) {
     try {
         text = HttpGetText(curl, url);
     } catch (const std::exception& e) {
-        std::cerr << "WARNING: couldn't fetch the Hipparcos star catalog (" << e.what()
-                  << ") - the skybox will fall back to its procedural stars, but ExoSim still runs fine.\n";
-        return json::array();
+        std::string what = e.what();
+        bool looksLikeCertError = what.find("SSL certificate") != std::string::npos
+            || what.find("certificate") != std::string::npos
+            || what.find("SSL_ERROR") != std::string::npos;
+        if (!looksLikeCertError) {
+            std::cerr << "WARNING: couldn't fetch the Hipparcos star catalog (" << e.what()
+                      << ") - the skybox will fall back to its procedural stars, but ExoSim still runs fine.\n";
+            return json::array();
+        }
+
+        // Some environments can't verify tapvizier.cds.unistra.fr's
+        // certificate chain even though other HTTPS endpoints above work
+        // fine (a local trust-store gap, not a problem with the query or
+        // endpoint). Retry once without verification, ONLY after a
+        // genuine verification failure, and ONLY for this one request -
+        // this catalog is public, non-sensitive astronomical data, so
+        // that's a low-stakes trade for a background starfield.
+        std::cerr << "WARNING: TLS certificate verification failed for VizieR (" << e.what()
+                  << ") - retrying this one request without verification.\n";
+        try {
+            text = HttpGetText(curl, url, /*verifySsl=*/false);
+        } catch (const std::exception& e2) {
+            std::cerr << "WARNING: retry without certificate verification also failed (" << e2.what()
+                      << ") - the skybox will fall back to its procedural stars, but ExoSim still runs fine.\n";
+            return json::array();
+        }
     }
 
     std::istringstream stream(text);
