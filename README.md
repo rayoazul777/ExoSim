@@ -9,7 +9,7 @@ Orbits are propagated from real Keplerian elements; the visual style
 
 ```
 ExoSim/
-  CMakeLists.txt        - build config (CMake, works directly in VS2022)
+  CMakeLists.txt        - build config
   vcpkg.json             - dependency manifest (glfw, glm, imgui, json, glad, curl)
   data/
     fetch_exoplanets.py  - Python fetch script (pulls real data from THREE sources)
@@ -306,7 +306,7 @@ up: **Project > CMake Settings** and confirm
 
 ## Where to go next
 
-- **Real companion separation**: still not implementable today - the
+- **Real companion separation**: the
   Archive doesn't expose a bulk physical/angular separation field, and I'm
   not going to fabricate one. If a future Archive table (or a
   supplementary catalog) adds it, swapping the schematic offset for a real
@@ -314,8 +314,8 @@ up: **Project > CMake Settings** and confirm
   placement code in main.cpp - the moon and companion orbital-motion code
   already reuse `KeplerOrbit`, so real period/separation data would slot
   in the same way real inclination/eccentricity did for moons.
-- **Ring gap positions**: Saturn and Uranus's rings are real (existence,
-  relative size, tilt), but the banding pattern inside them is a stylized
+- **Ring gap positions**: Saturn and Uranus's rings
+- the banding pattern inside them is a stylized
   approximation, not real gap radii like the actual Cassini Division -
   there's no simple bulk-queryable dataset of exact ring-gap positions to
   draw from the way there is for orbital elements.
