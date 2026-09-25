@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 
 namespace {
 const char* kLineVS = R"(
@@ -47,43 +48,53 @@ layout(location = 1) in vec2 aUV;
 uniform mat4 uMVP;
 uniform mat4 uModel;
 out vec2 vUV;
+out vec3 vLocalPos;
 out vec3 vNormalWorld;
 out vec3 vFragWorldPos;
 void main() {
     vUV = aUV;
-    // aPos lies exactly on a unit sphere, so it IS the local-space normal.
-    // mat3(uModel) is valid here since the planet model matrix is only
-    // ever rotation + uniform scale (no shear), so it doesn't need the
-    // full inverse-transpose normal matrix.
+    vLocalPos = aPos; // unit-sphere position: the 3D noise domain (no UV seams/pole pinching)
+    // mat3(uModel) is valid as a normal matrix here: planet/moon models are
+    // only ever rotation + uniform scale + translation (no shear).
     vNormalWorld = normalize(mat3(uModel) * aPos);
     vFragWorldPos = vec3(uModel * vec4(aPos, 1.0));
     gl_Position = uMVP * vec4(aPos, 1.0);
 }
 )";
 
-// Procedural, stylized planet surface - NOT a real image (no exoplanet
-// has ever been imaged in this kind of detail). Banded clouds for
-// gas/ice/mini-Neptune types, a cratered pattern for rocky types, driven
-// entirely by hash-based value noise computed per-pixel so it stays
-// sharp at any zoom level rather than pixelating like a fixed texture.
+// Procedural planet surface. KEY DESIGN POINT (the zoom-blur fix): all
+// noise is 3D, sampled on the unit-sphere position, and the number of
+// fractal octaves (uDetailOctaves) is raised by the CPU as the camera
+// approaches the surface - so zooming in reveals genuinely new, finer
+// detail instead of magnifying the same few soft blobs. Terrain is also
+// bump-shaded from its own height field, so crater rims and coastlines
+// stay crisp up close.
+//
+// Honesty note: for exoplanets, every pattern here is an illustrative
+// stylization chosen from the planet's type + equilibrium temperature -
+// never a real image. Known Solar System bodies use their real colors and
+// real feature TYPES (continents, caps, spots, rings, cracks), with
+// procedurally generated fine detail.
 const char* kSurfaceFS = R"(
 #version 330 core
 in vec2 vUV;
+in vec3 vLocalPos;
 in vec3 vNormalWorld;
 in vec3 vFragWorldPos;
 out vec4 FragColor;
 
+uniform mat4 uModel;
 uniform vec3 uBaseColor;
 uniform vec3 uAccentColor;
 uniform float uTime;
 uniform float uSeed;
 uniform int uPlanetType; // 0=Unknown 1=Rocky 2=SuperEarth 3=MiniNeptune 4=IceGiant 5=GasGiant
 uniform vec3 uViewPosWorld;
+uniform float uDetailOctaves; // raised as the camera nears the surface
+uniform float uEqTempK;       // real equilibrium temperature if known, else 0
 
-// Known-appearance path (only ever used for our own Solar System's
-// planets - see SolarSystemAppearance). When uIsKnownBody is 0, none of
-// these matter and the generic classification-driven path below runs.
 uniform int uIsKnownBody;
+uniform int uKnownBanded;
 uniform vec3 uSecondaryColor;
 uniform int uHasContinents;
 uniform int uHasPolarCaps;
@@ -91,159 +102,249 @@ uniform int uHasSpot;
 uniform vec3 uSpotColor;
 uniform vec2 uSpotUV;
 uniform float uHazeIntensity;
+uniform int uHasLineae;
 
-float hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
+// ---------- 3D noise ----------
+float hash31(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
 }
-
-float valueNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+vec3 hash33(vec3 p) {
+    return vec3(hash31(p), hash31(p + 31.7), hash31(p + 74.3));
 }
-
-float fbm(vec2 p) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    for (int i = 0; i < 4; i++) {
-        value += amplitude * valueNoise(p);
-        p *= 2.0;
-        amplitude *= 0.5;
+float vnoise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    float n000 = hash31(i);
+    float n100 = hash31(i + vec3(1,0,0));
+    float n010 = hash31(i + vec3(0,1,0));
+    float n110 = hash31(i + vec3(1,1,0));
+    float n001 = hash31(i + vec3(0,0,1));
+    float n101 = hash31(i + vec3(1,0,1));
+    float n011 = hash31(i + vec3(0,1,1));
+    float n111 = hash31(i + vec3(1,1,1));
+    return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+               mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+}
+// Fractal noise with a FRACTIONAL octave count: the last octave fades in
+// smoothly, so detail grows continuously while zooming (no popping).
+float fbm3(vec3 p, float octaves) {
+    float v = 0.0, a = 0.5, norm = 0.0;
+    for (int i = 0; i < 12; i++) {
+        float w = clamp(octaves - float(i), 0.0, 1.0);
+        if (w <= 0.0) break;
+        v += a * w * vnoise3(p);
+        norm += a * w;
+        p = p * 2.03 + vec3(17.1, 3.7, 9.2);
+        a *= 0.5;
     }
-    return value;
+    return v / max(norm, 1e-4);
 }
-
-// Jittered-cell ("Worley"-style) distance field, used for the cratered
-// rocky-planet look: distance from each point to the nearest of several
-// randomly offset lattice points.
-float cellDistance(vec2 p) {
-    vec2 cell = floor(p);
-    float minDist = 10.0;
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            vec2 neighbor = cell + vec2(float(x), float(y));
-            vec2 jitter = vec2(hash21(neighbor), hash21(neighbor + vec2(13.7, 71.3)));
-            vec2 point = neighbor + jitter;
-            minDist = min(minDist, length(p - point));
-        }
+// 3D cellular (Worley) noise: x = nearest feature distance, y = second nearest.
+vec2 worley3(vec3 p) {
+    vec3 c = floor(p);
+    float f1 = 10.0, f2 = 10.0;
+    for (int z = -1; z <= 1; z++)
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+        vec3 n = c + vec3(x, y, z);
+        float d = length(p - (n + hash33(n)));
+        if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
     }
-    return minDist;
+    return vec2(f1, f2);
+}
+// Crater height contribution at one scale: bowl + raised rim.
+float craters(vec3 p) {
+    vec2 w = worley3(p);
+    float bowl = smoothstep(0.0, 0.45, w.x) - 1.0;
+    float rim = smoothstep(0.30, 0.42, w.x) * (1.0 - smoothstep(0.42, 0.55, w.x));
+    return bowl * 0.5 + rim * 0.6;
+}
+vec3 dirFromUV(vec2 uv) {
+    float phi = uv.x * 6.2831853;
+    float theta = uv.y * 3.14159265;
+    return vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
+}
+// Great-circle "crack" lines (Europa lineae / ice-world fractures): analytic,
+// so they stay razor sharp at any zoom.
+float lineae(vec3 P, float seed, int count, float width) {
+    float m = 0.0;
+    for (int i = 0; i < 16; i++) {
+        if (i >= count) break;
+        vec3 n = normalize(hash33(vec3(seed, float(i) * 7.13, 3.3)) * 2.0 - 1.0);
+        vec3 wob = normalize(hash33(vec3(float(i) * 3.1, seed, 9.9)) * 2.0 - 1.0);
+        float d = abs(dot(P, n) + 0.02 * sin(dot(P, wob) * 25.0));
+        float fw = fwidth(d) + 1e-5;
+        float core = 1.0 - smoothstep(width - fw, width + fw, d);
+        // Europa's lineae are often DOUBLE ridges: add a faint parallel twin.
+        float twin = 1.0 - smoothstep(width - fw, width + fw, abs(d - width * 3.0));
+        m = max(m, max(core, twin * 0.5));
+    }
+    return m;
 }
 
-// Shortest wraparound distance between two points on a UV cylinder
-// (x wraps 0..1, y does not - fine for a small spot feature).
-float wrapDist(vec2 a, vec2 b) {
-    float dx = min(abs(a.x - b.x), 1.0 - abs(a.x - b.x));
-    float dy = a.y - b.y;
-    return length(vec2(dx, dy));
+// Terrain height field for rocky bodies (used for both color and bump).
+float terrainHeight(vec3 P, float oct) {
+    vec3 sp = P * 2.2 + uSeed * 0.013;
+    float h = fbm3(sp, oct) * 0.6;
+    h += craters(P * 4.0 + uSeed * 0.07) * 0.25;
+    h += craters(P * 11.0 + uSeed * 0.11) * 0.12;
+    if (oct > 7.0) h += craters(P * 32.0 + uSeed * 0.17) * 0.06 * clamp(oct - 7.0, 0.0, 1.0);
+    return h;
 }
 
 void main() {
-    vec3 normal = normalize(vNormalWorld);
+    vec3 P = normalize(vLocalPos);
+    float oct = uDetailOctaves;
     vec3 viewDir = normalize(uViewPosWorld - vFragWorldPos);
+    vec3 nWorld = normalize(vNormalWorld);
+    // Stylized key light (a fixed offset from the view direction - not the
+    // real star position) so bump-shaded relief reads clearly.
+    vec3 L = normalize(viewDir + normalize(vec3(0.45, 0.55, 0.2)));
 
     vec3 color = uBaseColor;
+    vec3 emissive = vec3(0.0);
+    bool useBump = false;
+    float variant = fract(sin(uSeed * 12.9898) * 43758.5453);
 
     if (uIsKnownBody == 1) {
-        // Real Solar System planet: banded blend of primary/secondary,
-        // then layer on whichever real features this planet has.
-        float bandNoise = fbm(vec2(vUV.x * 4.0, vUV.y * 9.0) + uSeed) * 0.18;
-        float band = sin((vUV.y + bandNoise) * 22.0 + uTime * 0.04);
-        float bandMix = smoothstep(-1.0, 1.0, band);
-        color = mix(uBaseColor, uSecondaryColor, bandMix * 0.6);
+        if (uKnownBanded == 1) {
+            // Giant planet: latitude bands with turbulent 3D-noise edges and
+            // fine streaks stretched along the bands (detail grows with zoom).
+            vec3 sp = vec3(P.x * 2.0, P.y * 7.0, P.z * 2.0) + uSeed * 0.01;
+            float turb = fbm3(sp + vec3(uTime * 0.01, 0.0, 0.0), oct) * 0.22;
+            float band = sin((P.y + turb) * 24.0);
+            color = mix(uBaseColor, uSecondaryColor, smoothstep(-1.0, 1.0, band) * 0.8);
+            float streak = fbm3(vec3(P.x * 6.0, P.y * 40.0, P.z * 6.0) + uSeed, oct);
+            color *= 0.88 + 0.24 * streak;
+        } else {
+            // Rocky known body: real colors, procedural relief.
+            float h = terrainHeight(P, oct);
+            color = mix(uSecondaryColor, uBaseColor, clamp(h + 0.55, 0.0, 1.0));
+            useBump = true;
+        }
 
         if (uHasContinents == 1) {
-            // Earth only (uHasContinents is never set for any other body).
-            // A single fbm threshold here used to produce one connected
-            // blob that read as "Pangea" rather than modern separate
-            // continents. Instead, union several individually-bounded
-            // falloff blobs at roughly-correct relative positions, so
-            // landmasses are guaranteed separate regardless of noise
-            // parameters - not cartographically precise, but unmistakably
-            // "several continents", not one.
-            vec2 c0 = vec2(0.20, 0.32); float r0 = 0.11; // North America
-            vec2 c1 = vec2(0.30, 0.62); float r1 = 0.09; // South America
-            vec2 c2 = vec2(0.52, 0.52); float r2 = 0.13; // Africa
-            vec2 c3 = vec2(0.64, 0.28); float r3 = 0.17; // Eurasia
-            vec2 c4 = vec2(0.82, 0.68); float r4 = 0.06; // Australia
-            vec2 c5 = vec2(0.50, 0.93); float r5 = 0.22; // Antarctica (south-polar)
-
-            vec2 centers[6] = vec2[6](c0, c1, c2, c3, c4, c5);
-            float radii[6] = float[6](r0, r1, r2, r3, r4, r5);
-
+            // Earth: continent shapes as angular-distance blobs at roughly
+            // correct relative positions, with fractal 3D-noise coastlines
+            // that keep sharpening as you zoom in.
+            vec3 c[6] = vec3[6](dirFromUV(vec2(0.20, 0.32)), dirFromUV(vec2(0.30, 0.62)),
+                                dirFromUV(vec2(0.52, 0.52)), dirFromUV(vec2(0.64, 0.28)),
+                                dirFromUV(vec2(0.82, 0.68)), dirFromUV(vec2(0.50, 0.95)));
+            float r[6] = float[6](0.11, 0.09, 0.13, 0.17, 0.06, 0.20);
+            float coastNoise = (fbm3(P * 5.0 + 11.0, oct) - 0.5) * 0.35;
             float land = 0.0;
-            for (int c = 0; c < 6; c++) {
-                vec2 d = vUV - centers[c];
-                d.x = min(abs(d.x), 1.0 - abs(d.x)); // wrap around longitude seam
-                float dist = length(d);
-                float edgeRoughness = fbm(vUV * 10.0 + float(c) * 13.7 + uSeed) * 0.06;
-                float blob = 1.0 - smoothstep(radii[c] - 0.03 + edgeRoughness, radii[c] + edgeRoughness, dist);
-                land = max(land, blob);
+            for (int k = 0; k < 6; k++) {
+                float ang = acos(clamp(dot(P, c[k]), -1.0, 1.0));
+                float rad = r[k] * 3.14159265 * 1.25;
+                float fw = fwidth(ang) + 1e-4;
+                land = max(land, 1.0 - smoothstep(rad - fw, rad + fw, ang + coastNoise));
             }
-
-            color = mix(uBaseColor, uSecondaryColor, land);
-            float clouds = fbm(vUV * 8.0 + vec2(uTime * 0.015, 0.0)) * 0.4;
-            color += vec3(clouds * 0.12);
+            float h = terrainHeight(P, oct);
+            vec3 landCol = mix(uSecondaryColor, vec3(0.55, 0.47, 0.30), clamp(fbm3(P * 3.0 + 5.0, oct) * 1.4 - 0.4, 0.0, 1.0));
+            landCol *= 0.8 + 0.4 * clamp(h + 0.5, 0.0, 1.0);
+            vec3 oceanCol = uBaseColor * (0.75 + 0.25 * fbm3(P * 8.0, oct));
+            color = mix(oceanCol, landCol, land);
+            useBump = land > 0.5;
+            float clouds = smoothstep(0.5, 0.75, fbm3(P * 3.0 + vec3(uTime * 0.01, 0.0, 0.0), oct));
+            color = mix(color, vec3(0.95), clouds * 0.55);
         }
 
         if (uHasPolarCaps == 1) {
-            float poleDist = min(vUV.y, 1.0 - vUV.y);
-            float cap = smoothstep(0.12, 0.03, poleDist);
+            float capEdge = 0.9 + (fbm3(P * 6.0 + 3.0, oct) - 0.5) * 0.06;
+            float fw = fwidth(P.y) + 1e-4;
+            float cap = smoothstep(capEdge - fw, capEdge + fw, abs(P.y));
             color = mix(color, vec3(0.93, 0.94, 0.97), cap);
         }
 
         if (uHasSpot == 1) {
-            float d = wrapDist(vUV, uSpotUV);
-            float spotMask = smoothstep(0.10, 0.05, d);
-            color = mix(color, uSpotColor, spotMask);
+            vec3 sc = dirFromUV(uSpotUV);
+            float ang = acos(clamp(dot(P, sc), -1.0, 1.0));
+            float swirl = (fbm3(P * 14.0 + uSeed, oct) - 0.5) * 0.08;
+            float spot = 1.0 - smoothstep(0.22, 0.30, ang + swirl);
+            color = mix(color, uSpotColor, spot);
+        }
+
+        if (uHasLineae == 1) {
+            float l = lineae(P, uSeed, 14, 0.006);
+            color = mix(color, uSecondaryColor, l * 0.85);
         }
 
         if (uHazeIntensity > 0.0) {
-            float haze = fbm(vUV * 6.0 + vec2(uTime * 0.03, 0.0));
-            color = mix(color, uBaseColor * 1.25, haze * uHazeIntensity);
+            float haze = fbm3(P * 2.5 + vec3(uTime * 0.01, 0.0, 0.0), oct);
+            color = mix(color, uBaseColor * 1.2, uHazeIntensity * (0.7 + 0.3 * haze));
+            useBump = false; // thick atmosphere hides relief (Venus, Titan)
         }
     } else if (uPlanetType == 5 || uPlanetType == 4 || uPlanetType == 3) {
-        // Gas giant / ice giant / mini-Neptune: horizontal cloud bands,
-        // slowly animated, with a bit of turbulent wobble in the band edges.
-        float turbulence = fbm(vec2(vUV.x * 5.0, vUV.y * 18.0) + uSeed) * 0.18;
-        float band = sin((vUV.y + turbulence) * 28.0 + uTime * 0.06);
-        float bandMix = smoothstep(-1.0, 1.0, band);
-        color = mix(uBaseColor * 0.55, uBaseColor * 1.35, bandMix);
-        // A little extra swirl detail on top.
-        float swirl = fbm(vUV * 10.0 + uSeed + uTime * 0.02) * 0.15;
-        color += swirl * uBaseColor * 0.3;
+        // Exoplanet giants: seeded band count/turbulence/hue; hot giants
+        // (eqT > 1000 K) get darker, reddish, glowing bands; some get a storm.
+        vec3 hueShift = mix(vec3(1.0), vec3(0.8 + 0.4 * variant, 0.9, 1.2 - 0.4 * variant), 0.5);
+        vec3 base = uBaseColor * hueShift;
+        float bands = 10.0 + variant * 30.0;
+        vec3 sp = vec3(P.x * 2.0, P.y * 7.0, P.z * 2.0) + uSeed * 0.01;
+        float turb = fbm3(sp + vec3(uTime * 0.01, 0.0, 0.0), oct) * (0.1 + 0.25 * variant);
+        float band = sin((P.y + turb) * bands);
+        color = mix(base * 0.55, base * 1.3, smoothstep(-1.0, 1.0, band));
+        color *= 0.88 + 0.24 * fbm3(vec3(P.x * 6.0, P.y * 40.0, P.z * 6.0) + uSeed, oct);
+        if (uEqTempK > 1000.0) {
+            color = mix(color, vec3(0.35, 0.12, 0.08), 0.55);
+            emissive += vec3(0.9, 0.35, 0.1) * smoothstep(0.4, 1.0, band) * 0.25;
+        }
+        if (variant > 0.5) {
+            vec3 sc = normalize(hash33(vec3(uSeed, 1.0, 2.0)) * 2.0 - 1.0);
+            sc.y *= 0.5; sc = normalize(sc);
+            float ang = acos(clamp(dot(P, sc), -1.0, 1.0));
+            color = mix(color, base * 0.5, 1.0 - smoothstep(0.12, 0.18, ang));
+        }
     } else if (uPlanetType == 1 || uPlanetType == 2) {
-        // Rocky / super-Earth: cratered terrain via jittered-cell distance
-        // field, plus broad highland/lowland color variation from fbm.
-        vec2 p = vUV * 12.0 + uSeed;
-        float d = cellDistance(p);
-        float craterFloor = smoothstep(0.0, 0.5, d);
-        float craterRim = smoothstep(0.32, 0.42, d) - smoothstep(0.42, 0.52, d);
-        float highlands = fbm(vUV * 6.0 + uSeed) * 0.35;
-        color = uBaseColor * (0.65 + 0.35 * craterFloor + highlands) + craterRim * 0.22;
+        float h = terrainHeight(P, oct);
+        useBump = true;
+        if (uEqTempK > 1000.0) {
+            // Lava world: dark crust, glowing fissures along cellular edges.
+            vec2 w = worley3(P * 6.0 + uSeed * 0.05);
+            float fissure = 1.0 - smoothstep(0.0, 0.06 + 0.04 * fbm3(P * 20.0, oct), w.y - w.x);
+            color = mix(vec3(0.12, 0.10, 0.09), vec3(0.25, 0.20, 0.18), clamp(h + 0.5, 0.0, 1.0));
+            emissive = vec3(1.0, 0.42, 0.08) * fissure * 1.2;
+        } else if (uEqTempK > 0.0 && uEqTempK < 200.0) {
+            // Ice world: bright ice, blue shading, sharp fracture lines.
+            color = mix(vec3(0.72, 0.80, 0.90), vec3(0.95, 0.97, 1.0), clamp(h + 0.5, 0.0, 1.0));
+            color = mix(color, vec3(0.45, 0.55, 0.70), lineae(P, uSeed, 10, 0.004) * 0.7);
+        } else {
+            // Barren / desert world: seeded palette (rust, gray, tan).
+            vec3 pal = variant < 0.33 ? vec3(0.62, 0.38, 0.25) : (variant < 0.66 ? vec3(0.50, 0.49, 0.47) : vec3(0.70, 0.60, 0.42));
+            color = mix(pal * 0.6, mix(pal, uBaseColor, 0.3), clamp(h + 0.55, 0.0, 1.0));
+        }
     } else {
-        // Unknown composition: flat, slightly noisy gray - deliberately
-        // unremarkable since we have no physical data to work from.
-        float n = fbm(vUV * 8.0 + uSeed) * 0.15;
-        color = uBaseColor * (0.85 + n);
+        // Unknown composition: deliberately plain - no physical data to go on.
+        color = uBaseColor * (0.85 + 0.15 * fbm3(P * 4.0 + uSeed, oct));
     }
 
-    // Fake terminator-style shading from view angle (stylized, not a real
-    // light source) so the sphere doesn't look flat.
-    float ndotv = clamp(dot(normal, viewDir), 0.0, 1.0);
-    color *= mix(0.35, 1.0, ndotv);
+    // Lighting: bump-shaded relief where terrain applies, otherwise the
+    // stylized view-facing falloff.
+    float lit;
+    if (useBump) {
+        float e = 0.002;
+        vec3 t1 = normalize(cross(P, abs(P.y) < 0.99 ? vec3(0,1,0) : vec3(1,0,0)));
+        vec3 t2 = cross(P, t1);
+        float h0 = terrainHeight(P, oct);
+        float h1 = terrainHeight(normalize(P + t1 * e), oct);
+        float h2 = terrainHeight(normalize(P + t2 * e), oct);
+        float strength = 0.9;
+        vec3 nLocal = normalize(P - strength * ((h1 - h0) / e * t1 + (h2 - h0) / e * t2) * 0.02);
+        vec3 nBump = normalize(mat3(uModel) * nLocal);
+        lit = 0.25 + 0.85 * clamp(dot(nBump, L), 0.0, 1.0);
+    } else {
+        float ndotl = clamp(dot(nWorld, L), 0.0, 1.0);
+        lit = 0.3 + 0.75 * ndotl;
+    }
+    color *= lit;
+    color += emissive;
 
-    // CRT-style rim glow, tinted with the same phosphor accent used
-    // elsewhere in the app, for visual continuity with the orbit view.
-    float rimGlow = pow(1.0 - ndotv, 3.0);
-    color += uAccentColor * rimGlow * 0.35;
+    // CRT-style phosphor rim glow for continuity with the rest of the app.
+    float ndotv = clamp(dot(nWorld, viewDir), 0.0, 1.0);
+    color += uAccentColor * pow(1.0 - ndotv, 4.0) * 0.3;
 
     FragColor = vec4(color, 1.0);
 }
@@ -251,42 +352,49 @@ void main() {
 
 const char* kRingVS = R"(
 #version 330 core
-layout(location = 0) in vec2 aDir;    // unit-circle direction (cos, sin)
-layout(location = 1) in float aRadial; // 0 = inner rim, 1 = outer rim
+layout(location = 0) in vec2 aDir;
+layout(location = 1) in float aRadial; // 0 = inner edge of the whole ring system, 1 = outer edge
 uniform mat4 uMVP;
 uniform float uInnerRadius;
 uniform float uOuterRadius;
-out float vRadial;
+out float vR; // radius in planet radii
 void main() {
     float r = mix(uInnerRadius, uOuterRadius, aRadial);
-    vec3 localPos = vec3(aDir.x * r, 0.0, aDir.y * r);
-    vRadial = aRadial;
-    gl_Position = uMVP * vec4(localPos, 1.0);
+    vR = r;
+    gl_Position = uMVP * vec4(aDir.x * r, 0.0, aDir.y * r, 1.0);
 }
 )";
 
-// Stylized ring banding - a radial-only pattern (real ring gaps like
-// Saturn's Cassini Division ARE purely radial, so this is physically
-// reasonable in structure even though the exact band positions here are
-// illustrative, not measured).
+// Rings built from REAL band radii (NASA ring fact sheets) passed as a
+// uniform array: gaps like the Cassini Division sit at their real measured
+// radii because they're simply where no band is. Within each band, a fine
+// ringlet texture adds visual structure - that sub-structure IS stylized
+// (the real ringlet pattern isn't a simple bulk dataset), but the band
+// boundaries it sits inside are real.
 const char* kRingFS = R"(
 #version 330 core
-in float vRadial;
+in float vR;
 out vec4 FragColor;
 uniform vec3 uColor;
-uniform float uOpacity;
 uniform float uSeed;
-
-float hash1(float x) { return fract(sin(x * 127.1) * 43758.5453); }
-
+uniform vec3 uBands[16]; // x = inner, y = outer, z = opacity
+uniform int uBandCount;
+float hash1(float x) { return fract(sin(x * 127.1 + uSeed) * 43758.5453); }
 void main() {
-    float r = vRadial;
-    float band = sin(r * 40.0 + uSeed) * 0.5 + 0.5;
-    float gapMask = smoothstep(0.15, 0.35, abs(sin(r * 23.0 + uSeed * 3.1)));
-    float shade = mix(0.55, 1.0, band) * mix(0.5, 1.0, gapMask);
-
-    float edgeFade = smoothstep(0.0, 0.06, r) * smoothstep(1.0, 0.94, r);
-    FragColor = vec4(uColor * shade, uOpacity * edgeFade);
+    float r = vR;
+    float w = fwidth(r) + 1e-6;
+    float alpha = 0.0;
+    for (int i = 0; i < 16; i++) {
+        if (i >= uBandCount) break;
+        vec3 b = uBands[i];
+        // Anti-aliased coverage: bands narrower than a pixel (Uranus's
+        // epsilon ring, Neptune's Adams ring) fade to partial coverage
+        // instead of flickering in and out.
+        float cov = smoothstep(b.x - w, b.x + w, r) * (1.0 - smoothstep(b.y - w, b.y + w, r));
+        alpha = max(alpha, cov * b.z);
+    }
+    float ringlets = 0.75 + 0.25 * sin(r * 900.0 + hash1(floor(r * 60.0)) * 6.28);
+    FragColor = vec4(uColor * (0.8 + 0.2 * ringlets), alpha * ringlets);
 }
 )";
 
@@ -543,8 +651,8 @@ void Renderer::buildSolidSphereMesh() {
     // Indexed triangle UV-sphere: position (vec3) + UV (vec2) per vertex,
     // interleaved. UV.x = longitude fraction, UV.y = latitude fraction -
     // the surface shader uses these directly for its procedural pattern.
-    constexpr int kRings = 32;
-    constexpr int kSegs = 48;
+    constexpr int kRings = 64;   // higher-res silhouette for close-up zoom
+    constexpr int kSegs = 128;
     constexpr float kPi = 3.14159265358979323846f;
 
     std::vector<float> verts; // x,y,z,u,v per vertex
@@ -773,6 +881,8 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
     glUniform1f(glGetUniformLocation(m_surfaceShader, "uSeed"), seed);
     glUniform1i(glGetUniformLocation(m_surfaceShader, "uPlanetType"), planetType);
     glUniform3f(glGetUniformLocation(m_surfaceShader, "uAccentColor"), accentColor.r, accentColor.g, accentColor.b);
+    glUniform1f(glGetUniformLocation(m_surfaceShader, "uDetailOctaves"), m_surfaceDetailOctaves);
+    glUniform1f(glGetUniformLocation(m_surfaceShader, "uEqTempK"), m_surfaceEqTempK);
 
     if (knownAppearance != nullptr) {
         const PlanetAppearance& a = *knownAppearance;
@@ -785,6 +895,8 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
         glUniform3f(glGetUniformLocation(m_surfaceShader, "uSpotColor"), a.spotColor.r, a.spotColor.g, a.spotColor.b);
         glUniform2f(glGetUniformLocation(m_surfaceShader, "uSpotUV"), a.spotLongitude, a.spotLatitude);
         glUniform1f(glGetUniformLocation(m_surfaceShader, "uHazeIntensity"), a.hazeIntensity);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasLineae"), a.hasLineae ? 1 : 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uKnownBanded"), a.isBanded ? 1 : 0);
     } else {
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uIsKnownBody"), 0);
         glUniform3f(glGetUniformLocation(m_surfaceShader, "uBaseColor"), baseColor.r, baseColor.g, baseColor.b);
@@ -792,6 +904,8 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasPolarCaps"), 0);
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasSpot"), 0);
         glUniform1f(glGetUniformLocation(m_surfaceShader, "uHazeIntensity"), 0.0f);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasLineae"), 0);
+        glUniform1i(glGetUniformLocation(m_surfaceShader, "uKnownBanded"), 0);
     }
 
     glBindVertexArray(m_solidSphereVao);
@@ -800,16 +914,29 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
 }
 
 void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
-                                  float innerRadius, float outerRadius,
-                                  const glm::vec3& color, float opacity, float seed) {
+                                  const std::vector<RingBand>& bands,
+                                  const glm::vec3& color, float seed) {
+    if (bands.empty()) return;
+    float inner = bands[0].innerRadius, outer = bands[0].outerRadius;
+    std::vector<float> packed;
+    int count = static_cast<int>(std::min<size_t>(bands.size(), 16));
+    for (int i = 0; i < count; ++i) {
+        inner = std::min(inner, bands[i].innerRadius);
+        outer = std::max(outer, bands[i].outerRadius);
+        packed.push_back(bands[i].innerRadius);
+        packed.push_back(bands[i].outerRadius);
+        packed.push_back(bands[i].opacity);
+    }
+
     glUseProgram(m_ringShader);
     glm::mat4 mvp = viewProj * model;
     glUniformMatrix4fv(glGetUniformLocation(m_ringShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
-    glUniform1f(glGetUniformLocation(m_ringShader, "uInnerRadius"), innerRadius);
-    glUniform1f(glGetUniformLocation(m_ringShader, "uOuterRadius"), outerRadius);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uInnerRadius"), inner);
+    glUniform1f(glGetUniformLocation(m_ringShader, "uOuterRadius"), outer);
     glUniform3f(glGetUniformLocation(m_ringShader, "uColor"), color.r, color.g, color.b);
-    glUniform1f(glGetUniformLocation(m_ringShader, "uOpacity"), opacity);
     glUniform1f(glGetUniformLocation(m_ringShader, "uSeed"), seed);
+    glUniform3fv(glGetUniformLocation(m_ringShader, "uBands"), count, packed.data());
+    glUniform1i(glGetUniformLocation(m_ringShader, "uBandCount"), count);
 
     // Transparent geometry: test depth against the opaque planet (so the
     // far half of the ring is correctly hidden behind it) but don't write

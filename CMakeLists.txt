@@ -22,6 +22,7 @@ add_executable(ExoSim
     src/PlanetClassifier.cpp
     src/StarClassifier.cpp
     src/SolarSystemAppearance.cpp
+    src/MissionPlanner.cpp
 )
 
 target_include_directories(ExoSim PRIVATE src)

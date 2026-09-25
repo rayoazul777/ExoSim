@@ -19,6 +19,7 @@ struct MoonRecord {
     double argPeriapsisDeg = 0.0;        // real (approximate) where confidently known, else 0
     double longAscNodeDeg = 0.0;         // real (approximate) where confidently known, else 0
     bool isReal = false;
+    double radiusKm = 0.0;               // real mean radius for real moons; 0 = unknown/speculative
 };
 
 // A companion star in a multi-star system. The Archive's `stellarhosts`
@@ -34,6 +35,13 @@ struct StarComponent {
     double massSolar = 0.0;
     std::string spectralType;
     bool hasData = false; // false = a known-to-exist companion (from sy_snum) with no resolved properties
+
+    // Real PROJECTED separation in AU, from a Washington Double Star
+    // catalog cross-match (angular separation x distance). 0 = no match.
+    // A projected separation is a LOWER BOUND on the true physical
+    // separation (we see the pair's orbit flattened onto the sky), so it's
+    // labeled as such wherever it's shown.
+    double projectedSepAU = 0.0;
 };
 
 // One real star from the Hipparcos catalog (ESA mission, via CDS's
@@ -46,6 +54,12 @@ struct StarCatalogEntry {
     double vmag = 0.0;    // visual magnitude - lower/negative is brighter
     double bv = 0.6;      // B-V color index (0.6 ~ Sun-like, if not measured)
     bool hasBv = false;
+
+    // Real Hipparcos proper motion (mas/yr; pmRA already includes the
+    // cos(dec) factor, per Hipparcos convention) and parallax (mas).
+    double pmRaMasYr = 0.0;
+    double pmDecMasYr = 0.0;
+    double parallaxMas = 0.0; // <= 0 = unmeasured/unreliable -> treated as infinitely distant
 };
 
 struct PlanetRecord {
@@ -80,6 +94,14 @@ struct PlanetRecord {
     double galacticLatDeg = 0.0;    // glat
     double galacticLonDeg = 0.0;    // glon
 
+    // Host's real sky position and distance (ra/dec/sy_dist) - used to
+    // compute how the real Hipparcos sky looks FROM this system (nearby
+    // stars shift via parallax) and to turn WDS angular separations into
+    // real projected AU separations. distPc 0 = unmeasured.
+    double hostRaDeg = 0.0;
+    double hostDecDeg = 0.0;
+    double distPc = 0.0;
+
     // Only populated for the built-in demo solar system - see MoonRecord's
     // comment above for why Archive-loaded planets don't carry real data here.
     std::vector<MoonRecord> moons;
@@ -101,6 +123,9 @@ struct StarSystem {
     int numStars = 1;
     double galacticLatDeg = 0.0;
     double galacticLonDeg = 0.0;
+    double hostRaDeg = 0.0;
+    double hostDecDeg = 0.0;
+    double distPc = 0.0; // 0 = unmeasured (or the Sun itself, the observer origin)
 
     // Populated by LoadStellarHosts, only for systems with numStars > 1.
     // Real per-star data where the Archive has it distinguished; padded
@@ -148,5 +173,12 @@ public:
     // doesn't exist or fails to parse; the skybox simply omits real stars
     // in that case rather than failing.
     static std::vector<StarCatalogEntry> LoadStarCatalog(const std::string& path);
+
+    // Cross-matches multi-star systems against data/double_stars.json (the
+    // Washington Double Star catalog via VizieR) by sky position, and sets
+    // each system's first companion's projectedSepAU = angular separation
+    // (arcsec) x distance (pc) - the definition of the parsec makes that
+    // product exactly AU. Safe if the file is missing (adds nothing).
+    static void LoadDoubleStars(const std::string& path, std::vector<StarSystem>& systems);
 };
 

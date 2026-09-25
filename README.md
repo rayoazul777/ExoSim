@@ -304,48 +304,101 @@ up: **Project > CMake Settings** and confirm
   (assumed coplanar)** - most Archive rows don't have a measured inclination,
   and it defaults to 0 degrees (coplanar) rather than silently guessing.
 
+## Mission Planner (Sol only)
+
+When viewing Sol, a **Mission Planner** window lets you pick a launch
+vehicle (Falcon Heavy or SLS Block 1 / Artemis) and any planet, dwarf
+planet, or real moon as a destination, then finds the **next optimal
+launch window** and flies it: a wireframe rocket follows the transfer arc,
+with a T-minus countdown, in-flight progress, and ETA.
+
+- **Real physics**: a Hohmann (minimum-energy) transfer computed from the
+  planets' real J2000 orbital elements (JPL/Standish), with the launch
+  window found by solving for the phase angle where the target arrives at
+  the transfer's far end. Δv from a 200 km LEO uses standard patched-conic
+  formulas. Verified in development: it finds the real **Nov 2026 Mars
+  window** (~265-day transfer, 3.68 km/s from LEO - textbook ~3.6), and
+  Earth→Moon in ~5 days (Artemis I's real outbound coast was ~5 days).
+- **Real dates**: simulation day 0 is now J2000, and the sim starts at
+  today's real date, so Sol's planets sit where they actually are and
+  launch windows are real calendar dates. (Exoplanet orbital phases are
+  unknown, so those systems' positions remain illustrative.)
+- **Vehicle data**: only published figures are shown (SpaceX: 16,800 kg to
+  Mars / 3,500 kg to Pluto for Falcon Heavy; NASA: ~27 t to trans-lunar
+  injection for SLS Block 1). Trajectory time and energy don't depend on
+  the vehicle; nothing is invented for destinations without published
+  figures. Artemis is a lunar program - non-lunar SLS trips are hypothetical.
+- **Honest limits**: Hohmann is the idealized minimum-energy path. Real
+  outer-planet missions use gravity assists and arrive far sooner
+  (Voyager 2 reached Neptune in ~12 years; Hohmann would take ~30).
+  Planet inclinations are ignored in the transfer, and a moon destination
+  means arriving in its parent planet's system (final capture not modeled).
+
+## Also new in this update
+
+- **Moon inspection**: click "Inspect <moon>" (System view planet panel or
+  the Planet Detail moon list) for a full-screen close-up with orbital data
+  and real radius. Speculative exomoons are inspectable too, clearly labeled.
+- **Zoom-blur fix**: surface noise is now 3D (object-space, no UV seams) and
+  the fractal octave count rises as the camera approaches (5 → 11), with
+  bump-shaded terrain - so zooming reveals new detail instead of magnifying
+  blur.
+- **Exoplanet surface variety**: seeded variants picked from type + real
+  equilibrium temperature - lava worlds (>1000 K, glowing fissures), ice
+  worlds (<200 K, fracture lines), seeded barren/desert palettes, and hot
+  Jupiters with varied band counts, turbulence and storms. Illustrative only.
+- **Real ring structure**: Saturn, Uranus, Jupiter and Neptune rings now use
+  real radii from NASA ring fact sheets - the Cassini Division and Encke gap
+  sit at their real radii. Jupiter's and Neptune's real but very faint rings
+  are now included at very low opacity. Fine ringlet texture inside each
+  band is stylized; the band boundaries are real.
+- **Europa's lineae** are now drawn as sharp great-circle-like arcs (the real
+  geometry type, including double ridges); their specific orientations are
+  procedural, not a map of Europa's actual cracks.
+- **Real companion separations**: multi-star hosts are cross-matched by sky
+  position against the **Washington Double Star catalog** (via VizieR);
+  angular separation × distance gives a real **projected** separation in AU
+  (a lower bound on the true separation), and the companion orbits with a
+  Kepler's-3rd-law period. Unmatched systems keep the schematic placement.
+- **The sky from other systems**: using real Hipparcos parallaxes, the star
+  field is recomputed from each exoplanet host's real position - nearby
+  constellations distort, brightness follows the inverse-square law, and our
+  Sun appears as a star when close enough to see. A **Sky epoch** slider
+  applies real proper motions over ±100,000 years (linear approximation).
+- **Deeper star catalog on request**: `--star-vmag-limit 8.0` (~40k stars)
+  up to `12.4` (full Hipparcos, ~118k) in either fetch script/tool.
+- **TLS proper fix**: the Python script now uses `certifi` automatically
+  when installed (`pip install certifi`); the C++ tool uses the OS-native
+  certificate store (curl ≥ 7.71). The narrow insecure retry remains only
+  as a last resort.
+- **Frame bug fixed**: orbits were drawn in the x-y plane while the camera,
+  rings and companions used x-z as horizontal, so moons orbited
+  perpendicular to Saturn's rings. One consistent ecliptic→world rotation
+  now applies everywhere.
+- **Dwarf planets at real positions**: SBDB mean anomalies are propagated to
+  J2000, so Pluto, Ceres & co. sit where they really are too.
+
+## Verification done for this update
+
+Unlike earlier updates, this one was compiled and linked in full on Linux
+(GCC 13, real GLFW/ImGui/glad/libcurl headers) with zero errors or
+warnings, and **every GLSL shader was validated with the Khronos reference
+compiler** - which caught a real bug (a function named `noise3` collided
+with a GLSL built-in and would have broken the whole planet shader at
+runtime). The mission planner and WDS cross-match were unit-tested against
+known answers. Still untested: actual rendering on your GPU, and the live
+VizieR responses for the new columns/tables (parsing is defensive and
+prints the response header if columns don't match).
+
 ## Where to go next
 
-- **Real companion separation**: still not implementable today - the
-  Archive doesn't expose a bulk physical/angular separation field, and I'm
-  not going to fabricate one. If a future Archive table (or a
-  supplementary catalog) adds it, swapping the schematic offset for a real
-  one would be a straightforward change to `selectSystem`'s companion-
-  placement code in main.cpp - the moon and companion orbital-motion code
-  already reuse `KeplerOrbit`, so real period/separation data would slot
-  in the same way real inclination/eccentricity did for moons.
-- **Ring gap positions**: Saturn and Uranus's rings are real (existence,
-  relative size, tilt), but the banding pattern inside them is a stylized
-  approximation, not real gap radii like the actual Cassini Division -
-  there's no simple bulk-queryable dataset of exact ring-gap positions to
-  draw from the way there is for orbital elements.
-- **Jupiter and Neptune's real (but very faint) rings** were deliberately
-  left out - they exist in reality but are so faint they're not part of
-  either planet's "known appearance" the way Saturn's or even Uranus's
-  are, so including them risked overstating their visual prominence.
-- **Europa's cracks (lineae) are real linear features**; the shader's
-  banding/mottling gives a stylized approximation of the coloring, not
-  the actual crack geometry - a genuine limitation of the current shader
-  technique, noted directly in the code.
-- **Star catalog depth**: capped at Vmag <= 6.5 (~9,000 stars, the
-  naked-eye limit) rather than the full Hipparcos catalog (~118,000
-  stars down to much fainter magnitudes) - a deliberate scope match for
-  "the visible night sky" rather than gratuitous data volume, but going
-  deeper would be a straightforward change to the ADQL query's WHERE
-  clause in both fetch script/tool if a denser field is wanted.
-- **Star catalog proper motion / parallax** aren't fetched - Hipparcos
-  has both, which would let stars drift correctly over very long
-  simulated timescales and (with parallax) support real relative
-  distances, neither of which this app currently uses since the skybox
-  treats every star as infinitely distant and static.
-- **VizieR TLS certificate verification**: some Windows Python installs
-  can't verify `tapvizier.cds.unistra.fr`'s certificate chain (a local
-  trust-store gap - confirmed by an actual test run, where the other three
-  fetches succeeded fine and only this one hit
-  `CERTIFICATE_VERIFY_FAILED`). Both fetch script/tool now retry once
-  without verification, but ONLY after a genuine verification failure and
-  ONLY for this one request - a deliberate, narrow, and logged exception,
-  not a general policy. The proper long-term fix is `pip install certifi`
-  (Python) or keeping your OS's root certificates current; this fallback
-  exists so the fetch still works today without adding that as a required
-  dependency for a background starfield.
+- **Gravity-assist trajectories** (e.g. VEEGA, Jupiter flybys) would make
+  outer-planet mission times realistic - a substantially harder problem
+  (Lambert solvers + flyby patching) than Hohmann transfers.
+- **Real planet textures** for Sol from NASA imagery would beat colored
+  procedural terrain, at the cost of shipping large image assets.
+- **Moon-specific mission legs**: model capture into the parent planet's
+  orbit and the transfer to the target moon.
+- **Radial velocity for star motion**: fetching radial velocities (from a
+  Gaia-era catalog) would replace the linear proper-motion approximation
+  with true 3D stellar motion over long epochs.

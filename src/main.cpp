@@ -36,6 +36,7 @@
 #include "PlanetClassifier.h"
 #include "StarClassifier.h"
 #include "SolarSystemAppearance.h"
+#include "MissionPlanner.h"
 
 namespace {
     int g_width = 1280, g_height = 800;
@@ -124,7 +125,17 @@ namespace {
         return std::log10(1.0 + auMagnitude) * 3.0;
     }
 
-    glm::vec3 toDisplaySpace(const glm::dvec3& posAU, bool logScale) {
+    // KeplerOrbit works in the ecliptic frame (orbital plane = x-y, north =
+    // +z). The renderer's world is y-up (camera, rings, companions and guide
+    // rings all treat x-z as horizontal). Before this conversion existed,
+    // orbits were drawn in x-y - so e.g. Saturn's moons orbited
+    // perpendicular to its rings. One rotation, used everywhere.
+    glm::dvec3 eclipticToWorld(const glm::dvec3& p) {
+        return glm::dvec3(p.x, p.z, -p.y);
+    }
+
+    glm::vec3 toDisplaySpace(const glm::dvec3& posEcliptic, bool logScale) {
+        glm::dvec3 posAU = eclipticToWorld(posEcliptic);
         double r = glm::length(posAU);
         if (r < 1e-9) return glm::vec3(0.0f);
         double displayR = displayMagnitude(r, logScale);
@@ -319,25 +330,70 @@ int main() {
     std::cout << "[main] Grouped " << planets.size() << " planets into "
               << systems.size() << " star systems.\n";
 
-    // Real Hipparcos star catalog (CDS VizieR TAP - a third data source,
-    // separate from both NASA sources used above) for the skybox. Built
-    // once here, not per frame - direction/color/size all derive from
-    // real RA/Dec/B-V/Vmag, see the helpers above.
-    {
-        std::vector<StarCatalogEntry> starCatalog = Dataset::LoadStarCatalog("data/star_catalog.json");
-        std::vector<glm::vec3> starDirs;
-        std::vector<glm::vec3> starColors;
-        std::vector<float> starSizes;
-        starDirs.reserve(starCatalog.size());
-        starColors.reserve(starCatalog.size());
-        starSizes.reserve(starCatalog.size());
-        for (const auto& s : starCatalog) {
-            starDirs.push_back(raDecToDirection(s.raDeg, s.decDeg));
-            starColors.push_back(bvToColor(s.bv) * vmagToBrightness(s.vmag));
-            starSizes.push_back(vmagToPointSize(s.vmag));
+    // Real Hipparcos star catalog (CDS VizieR TAP - a third data source).
+    // Kept in memory so the visible sky can be recomputed for:
+    //  - the OBSERVER's position: from an exoplanet system, stars with a
+    //    real Hipparcos parallax are placed in 3D (distance = 1000/parallax
+    //    pc) and re-projected from that system's real position (host
+    //    RA/Dec + sy_dist), with brightness corrected by the inverse-square
+    //    law (magnitude + 5*log10(newDist/oldDist)). Nearby constellations
+    //    genuinely distort, and our own Sun appears as a star when close
+    //    enough to be visible. Stars without a usable parallax stay fixed
+    //    (treated as infinitely distant).
+    //  - the EPOCH: real proper motions shift stars over +-100,000 years
+    //    (linear approximation - ignores radial velocity/perspective
+    //    acceleration, which matters over very long spans for nearby stars).
+    std::vector<StarCatalogEntry> starCatalog = Dataset::LoadStarCatalog("data/star_catalog.json");
+    float skyEpochOffsetYears = 0.0f;
+    int visibleStarCount = 0;
+    bool sunVisibleInSky = false;
+    double sunApparentVmag = 0.0;
+
+    auto rebuildStarField = [&](const StarSystem& sys) {
+        glm::dvec3 observer(0.0);
+        bool fromSun = sys.isHome || sys.distPc <= 0.0;
+        if (!fromSun) observer = glm::dvec3(raDecToDirection(sys.hostRaDeg, sys.hostDecDeg)) * sys.distPc;
+
+        std::vector<glm::vec3> dirs, colors;
+        std::vector<float> sizes;
+        dirs.reserve(starCatalog.size()); colors.reserve(starCatalog.size()); sizes.reserve(starCatalog.size());
+        const double dtYears = skyEpochOffsetYears;
+
+        for (const auto& st : starCatalog) {
+            double cosDec = std::cos(glm::radians(st.decDeg));
+            double ra = st.raDeg + (cosDec > 1e-6 ? st.pmRaMasYr * dtYears / 3.6e6 / cosDec : 0.0);
+            double dec = std::clamp(st.decDeg + st.pmDecMasYr * dtYears / 3.6e6, -90.0, 90.0);
+            glm::dvec3 dir(raDecToDirection(ra, dec));
+            double vmag = st.vmag;
+            if (st.parallaxMas > 0.5 && !fromSun) { // > 0.5 mas: within ~2 kpc, parallax meaningful
+                double dPc = 1000.0 / st.parallaxMas;
+                glm::dvec3 rel = dir * dPc - observer;
+                double dNew = glm::length(rel);
+                if (dNew < 0.05) continue; // this is the observer's own host star
+                dir = rel / dNew;
+                vmag += 5.0 * std::log10(dNew / dPc);
+            }
+            if (vmag > 7.5) continue; // too faint to see from here
+            dirs.push_back(glm::vec3(dir));
+            colors.push_back(bvToColor(st.bv) * vmagToBrightness(vmag));
+            sizes.push_back(vmagToPointSize(vmag));
         }
-        renderer.setStarCatalog(starDirs, starColors, starSizes);
-    }
+
+        sunVisibleInSky = false;
+        if (!fromSun) {
+            // The Sun (absolute magnitude 4.83) seen from this system.
+            double d = glm::length(observer);
+            sunApparentVmag = 4.83 + 5.0 * std::log10(d / 10.0);
+            if (sunApparentVmag < 7.5) {
+                sunVisibleInSky = true;
+                dirs.push_back(glm::vec3(-observer / d));
+                colors.push_back(bvToColor(0.65) * vmagToBrightness(sunApparentVmag) * 1.3f);
+                sizes.push_back(vmagToPointSize(sunApparentVmag) + 1.5f);
+            }
+        }
+        visibleStarCount = static_cast<int>(dirs.size());
+        renderer.setStarCatalog(dirs, colors, sizes);
+    };
 
     int currentSystemIndex = 0;
     int selectedPlanetLocal = -1; // index within systems[currentSystemIndex].planetIndices
@@ -355,6 +411,15 @@ int main() {
     float detailSurfaceSeed = 0.0f; // varies the procedural pattern per planet
     std::vector<MoonRecord> detailMoons;
     bool detailMoonsAreReal = false; // true only for the built-in demo solar system
+    int detailMoonIndex = -1;        // >= 0: the Detail view is inspecting detailMoons[this], not the planet
+
+    // Mission planner state (Sol only).
+    struct MissionTarget { std::string label; size_t planetIdx; bool isEarthMoon; };
+    std::vector<MissionTarget> missionTargets;
+    int missionTargetChoice = 0;
+    int missionVehicleChoice = 0;
+    bool missionActive = false;
+    MissionPlan activeMission;
 
     // Speculative moons are deterministic from the planet's name, but are
     // cached after first generation (rather than recomputed every click)
@@ -388,6 +453,9 @@ int main() {
     struct CompanionVisual {
         float orbitRadius;
         float baseAngle;
+        bool realSeparation = false; // true: orbitRadius from a real WDS projected separation
+        double separationAU = 0.0;
+        double periodDays = 0.0;     // Kepler's 3rd law, only when realSeparation
         glm::vec3 color;
         float displayRadius;
         bool hasData;
@@ -461,6 +529,19 @@ int main() {
                 cv.orbitRadius = static_cast<float>(offsetRadius);
                 cv.baseAngle = static_cast<float>(angle);
                 const StarComponent& comp = sys.companions[i];
+                if (comp.projectedSepAU > 0.0) {
+                    // Real projected separation (WDS). Period from Kepler's
+                    // 3rd law, P[yr] = sqrt(a[AU]^3 / (M1+M2)[Msun]), using the
+                    // projected separation as a - a lower bound on the true
+                    // separation, so the period is a lower bound too.
+                    cv.realSeparation = true;
+                    cv.separationAU = comp.projectedSepAU;
+                    cv.orbitRadius = static_cast<float>(displayMagnitude(comp.projectedSepAU, logScaleEnabled));
+                    double m1 = sys.starMassSolar > 0.0 ? sys.starMassSolar : 1.0;
+                    double m2 = comp.massSolar > 0.0 ? comp.massSolar : 0.0;
+                    double a = comp.projectedSepAU;
+                    cv.periodDays = std::sqrt(a * a * a / (m1 + m2)) * 365.25;
+                }
                 if (comp.hasData) {
                     StarClassification compCls = StarClassifier::Classify(comp.teffK, comp.radiusSolar, comp.spectralType);
                     cv.color = compCls.color;
@@ -501,12 +582,30 @@ int main() {
         float fitDistance = static_cast<float>(std::max(maxDisplay, 0.5)) * 2.5f;
         g_cam.systemDistanceTarget = fitDistance;
         if (snap) g_cam.systemDistance = fitDistance;
+
+        rebuildStarField(sys); // the sky as seen from THIS system
     };
 
     selectSystem(currentSystemIndex, /*snap=*/true);
 
     float simSpeedDaysPerSecond = 5.0f;
-    float simTimeDays = 0.0f;
+    // Day 0 = J2000 (2000-01-01 12:00). Sol's planets use real J2000
+    // elements, so starting at today's real date puts them where they
+    // actually are right now. (Exoplanet orbital phases are unknown, so
+    // their positions are illustrative regardless of date.)
+    double simTimeDays = MissionPlanner::NowDaysSinceJ2000();
+
+    // Mission targets: every Sol planet (except Earth) and every real moon.
+    for (const auto& sys : systems) {
+        if (!sys.isHome) continue;
+        for (size_t pIdx : sys.planetIndices) {
+            if (planets[pIdx].name != "Earth") missionTargets.push_back({planets[pIdx].name, pIdx, false});
+            for (const auto& m : planets[pIdx].moons) {
+                bool earthMoon = planets[pIdx].name == "Earth";
+                missionTargets.push_back({m.name + " (moon of " + planets[pIdx].name + ")", pIdx, earthMoon});
+            }
+        }
+    }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -566,7 +665,9 @@ int main() {
                 // CompanionVisual's comment). Slower for larger schematic
                 // orbits so a system with multiple companions doesn't look
                 // frantic.
-                float angle = comp.baseAngle + static_cast<float>(now) * (0.15f / comp.orbitRadius);
+                float angle = comp.realSeparation && comp.periodDays > 0.0
+                    ? comp.baseAngle + static_cast<float>(2.0 * 3.14159265358979323846 * std::fmod(simTimeDays / comp.periodDays, 1.0))
+                    : comp.baseAngle + static_cast<float>(now) * (0.15f / comp.orbitRadius);
                 glm::vec3 compPos(comp.orbitRadius * std::cos(angle), 0.0f, comp.orbitRadius * std::sin(angle));
                 glm::mat4 compModel = glm::translate(glm::mat4(1.0f), compPos)
                                      * glm::scale(glm::mat4(1.0f), glm::vec3(comp.displayRadius));
@@ -575,6 +676,37 @@ int main() {
 
             for (const auto& gr : guideRings) {
                 renderer.renderAuxiliaryRing(viewProj, gr.points, glm::vec3(0.5f, 0.5f, 0.55f), 0.25f);
+            }
+
+            // Mission trajectory (Sol only; Earth-Moon transfers are far too
+            // small to see at AU scale, so those are HUD-only).
+            if (missionActive && currentSystem.isHome && !activeMission.earthMoonMission) {
+                KeplerOrbit transfer(activeMission.transferElements);
+                std::vector<glm::vec3> arc;
+                constexpr int kArcSegs = 128;
+                for (int k = 0; k <= kArcSegs; ++k)
+                    arc.push_back(toDisplaySpace(transfer.positionAtTime(activeMission.transferDays * k / kArcSegs), logScaleEnabled));
+                for (int k = kArcSegs; k >= 0; --k) arc.push_back(arc[k]); // retrace so the line loop doesn't draw a closing chord
+                renderer.renderAuxiliaryRing(viewProj, arc, glm::vec3(1.0f, 0.65f, 0.15f), 0.45f);
+
+                double tRel = std::clamp(simTimeDays - activeMission.launchDay, 0.0, activeMission.transferDays);
+                glm::vec3 craft = toDisplaySpace(transfer.positionAtTime(tRel), logScaleEnabled);
+                glm::vec3 ahead = toDisplaySpace(transfer.positionAtTime(std::min(tRel + 1.0, activeMission.transferDays)), logScaleEnabled);
+                glm::vec3 dir = glm::length(ahead - craft) > 1e-6f ? glm::normalize(ahead - craft) : glm::vec3(1, 0, 0);
+                glm::vec3 side = glm::normalize(glm::cross(dir, glm::vec3(0, 1, 0)) + glm::vec3(1e-6f));
+                float sz = g_cam.systemDistance * 0.018f; // constant on-screen size
+                // Wireframe rocket glyph: nose cone, body, fins.
+                std::vector<glm::vec3> glyph = {
+                    craft + dir * sz * 1.2f,
+                    craft + dir * sz * 0.5f + side * sz * 0.25f,
+                    craft - dir * sz * 0.8f + side * sz * 0.25f,
+                    craft - dir * sz * 1.2f + side * sz * 0.6f,
+                    craft - dir * sz * 1.0f,
+                    craft - dir * sz * 1.2f - side * sz * 0.6f,
+                    craft - dir * sz * 0.8f - side * sz * 0.25f,
+                    craft + dir * sz * 0.5f - side * sz * 0.25f,
+                };
+                renderer.renderAuxiliaryRing(viewProj, glyph, glm::vec3(1.0f, 0.9f, 0.5f), 1.0f);
             }
         } else {
             eye = orbitCameraEye(g_cam.planetDistance);
@@ -601,6 +733,29 @@ int main() {
             glm::mat4 model = tilt * spin;
             const glm::vec3 phosphorGreen(0.15f, 0.95f, 0.55f); // matches the orbit-ring accent color
 
+            // Zoom-driven detail: each halving of the distance to the surface
+            // adds one fractal octave (5 at a comfortable distance, up to 11
+            // right at the surface) - this is what keeps close-ups sharp.
+            float surfaceGap = std::max(g_cam.planetDistance - 1.0f, 0.01f);
+            renderer.setSurfaceDetail(std::clamp(5.0f + std::log2(2.0f / surfaceGap), 5.0f, 11.0f));
+
+            bool inspectingMoon = detailMoonIndex >= 0 && detailMoonIndex < static_cast<int>(detailMoons.size());
+            if (inspectingMoon) {
+                const MoonRecord& moon = detailMoons[detailMoonIndex];
+                PlanetAppearance moonLook = moon.isReal ? SolarSystemAppearance::Lookup(moon.name) : PlanetAppearance{};
+                glm::mat4 moonTilt = moonLook.isKnown
+                    ? glm::rotate(glm::mat4(1.0f), glm::radians(moonLook.axialTiltDeg), glm::vec3(0.0f, 0.0f, 1.0f))
+                    : glm::mat4(1.0f);
+                glm::mat4 moonModelMain = moonTilt * spin;
+                renderer.setSurfaceEqTemp(0.0f);
+                // Rocky/icy generic look for moons without a real appearance
+                // (speculative exomoons): illustrative only, labeled in the HUD.
+                renderer.renderPlanetSurface(viewProj, moonModelMain, eye, 1, glm::vec3(0.62f, 0.60f, 0.58f), phosphorGreen,
+                                              static_cast<float>(now), detailSurfaceSeed + static_cast<float>(detailMoonIndex) * 7.0f,
+                                              moonLook.isKnown ? &moonLook : nullptr);
+                renderer.renderPlanetDetail(viewProj, glm::scale(moonModelMain, glm::vec3(1.01f)), phosphorGreen * 0.8f);
+            } else {
+            renderer.setSurfaceEqTemp(static_cast<float>(planets[detailPlanetGlobalIndex].eqTempK));
             renderer.renderPlanetSurface(viewProj, model, eye, static_cast<int>(detailClassification.type),
                                           detailClassification.displayColor, phosphorGreen,
                                           static_cast<float>(now), detailSurfaceSeed,
@@ -615,9 +770,8 @@ int main() {
             // the planet (not spinning with it, since rings are
             // azimuthally uniform and spin wouldn't be visible anyway).
             if (detailAppearance.isKnown && detailAppearance.hasRings) {
-                renderer.renderPlanetRings(viewProj, tilt,
-                    detailAppearance.ringInnerRadius, detailAppearance.ringOuterRadius,
-                    detailAppearance.ringColor, detailAppearance.ringOpacity, detailSurfaceSeed);
+                renderer.renderPlanetRings(viewProj, tilt, detailAppearance.ringBands,
+                    detailAppearance.ringColor, detailSurfaceSeed);
             }
 
             // Moons: real ones for the demo solar system, otherwise
@@ -628,6 +782,8 @@ int main() {
             // Positions are propagated with the same KeplerOrbit math used
             // for planets, so inclination and eccentricity genuinely tilt
             // and distort each moon's path rather than a flat circle.
+            renderer.setSurfaceDetail(5.0f); // moons here are small on screen
+            renderer.setSurfaceEqTemp(0.0f);
             for (size_t mi = 0; mi < detailMoons.size(); ++mi) {
                 const MoonRecord& moon = detailMoons[mi];
                 float dispR = 1.3f + 0.9f * std::log10(1.0f + static_cast<float>(moon.orbitRadiusPlanetRadii));
@@ -643,7 +799,7 @@ int main() {
                 KeplerOrbit moonOrbit(moonElements);
 
                 double fastDays = static_cast<double>(now) * 15.0; // stylized playback speed, not real-time
-                glm::vec3 moonPos(moonOrbit.positionAtTime(fastDays));
+                glm::vec3 moonPos(eclipticToWorld(moonOrbit.positionAtTime(fastDays)));
 
                 glm::mat4 moonModel = glm::translate(glm::mat4(1.0f), moonPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.12f));
 
@@ -673,10 +829,11 @@ int main() {
                 constexpr int kOrbitSegs = 64;
                 for (int s = 0; s <= kOrbitSegs; ++s) {
                     double t = moonElements.periodDays * s / kOrbitSegs;
-                    orbitPts.emplace_back(moonOrbit.positionAtTime(t));
+                    orbitPts.emplace_back(eclipticToWorld(moonOrbit.positionAtTime(t)));
                 }
                 renderer.renderAuxiliaryRing(viewProj, orbitPts, guideColor, guideAlpha * 0.4f);
             }
+            } // end: planet (not moon) inspection
         }
 
         crt.endSceneAndPresent(static_cast<float>(now));
@@ -692,7 +849,21 @@ int main() {
             ImGui::Begin("ExoSim Control");
             ImGui::Text("Star systems loaded: %zu", systems.size());
             ImGui::SliderFloat("Sim speed (days/sec)", &simSpeedDaysPerSecond, 0.0f, 200.0f);
-            ImGui::Text("Elapsed sim time: %.1f days", simTimeDays);
+            ImGui::Text("Sim date: %s", MissionPlanner::DayToCalendar(simTimeDays).c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Today")) simTimeDays = MissionPlanner::NowDaysSinceJ2000();
+            ImGui::TextDisabled(currentSystem.isHome ? "(Sol: real J2000-based planet positions)"
+                                                     : "(exoplanet orbital phases are unknown - positions illustrative)");
+            if (ImGui::SliderFloat("Sky epoch (years from now)", &skyEpochOffsetYears, -100000.0f, 100000.0f, "%.0f")) {
+                rebuildStarField(currentSystem);
+            }
+            ImGui::TextDisabled("(real Hipparcos proper motions; linear approximation)");
+            ImGui::Text("Visible stars from here: %d", visibleStarCount);
+            if (!currentSystem.isHome && currentSystem.distPc > 0.0) {
+                ImGui::TextDisabled("Sky recomputed from %.1f pc away via real parallaxes.", currentSystem.distPc);
+                if (sunVisibleInSky) ImGui::Text("Our Sun is visible from here (mag %.1f).", sunApparentVmag);
+                else ImGui::TextDisabled("Our Sun is too faint to see from here (mag %.1f).", sunApparentVmag);
+            }
             if (ImGui::Checkbox("Log-scale distances", &logScaleEnabled)) {
                 selectSystem(currentSystemIndex);
             }
@@ -728,6 +899,14 @@ int main() {
                 for (const auto& comp : currentCompanions) {
                     ImGui::TextColored(ImVec4(comp.color.r, comp.color.g, comp.color.b, 1.0f),
                         "  Companion: %s", comp.label.c_str());
+                    if (comp.realSeparation) {
+                        ImGui::Text("    Projected separation: %.0f AU (real, WDS; a lower bound)", comp.separationAU);
+                        ImGui::Text("    Orbital period: >= ~%.0f years (Kepler's 3rd law)", comp.periodDays / 365.25);
+                        if (!logScaleEnabled && comp.orbitRadius > g_cam.systemDistance)
+                            ImGui::TextDisabled("    (off-screen at true scale - zoom out or enable log scale)");
+                    } else {
+                        ImGui::TextDisabled("    Separation unknown - position/motion schematic.");
+                    }
                 }
             }
             ImGui::Separator();
@@ -796,9 +975,133 @@ int main() {
                     for (char ch : p.name) detailSurfaceSeed += static_cast<float>(static_cast<unsigned char>(ch));
                     detailMoons = getMoonsForPlanet(pIdx);
                     detailMoonsAreReal = !p.moons.empty();
+                    detailMoonIndex = -1;
                     g_viewMode = ViewMode::PlanetDetail;
                 }
+                const auto& moonsHere = getMoonsForPlanet(pIdx);
+                for (int mi = 0; mi < static_cast<int>(moonsHere.size()); ++mi) {
+                    std::string lbl = "Inspect " + moonsHere[mi].name + (moonsHere[mi].isReal ? "" : " (speculative)") + "##m" + std::to_string(mi);
+                    if (ImGui::SmallButton(lbl.c_str())) {
+                        detailPlanetGlobalIndex = pIdx;
+                        detailClassification = PlanetClassifier::Classify(p);
+                        detailAppearance = SolarSystemAppearance::Lookup(p.name);
+                        detailSurfaceSeed = hashSeedFromString(p.name);
+                        detailMoons = moonsHere;
+                        detailMoonsAreReal = !p.moons.empty();
+                        detailMoonIndex = mi;
+                        g_viewMode = ViewMode::PlanetDetail;
+                    }
+                }
             }
+            ImGui::End();
+
+            // --- Mission planner (Sol only) ---
+            if (currentSystem.isHome && !missionTargets.empty()) {
+                ImGui::Begin("Mission Planner");
+                const char* vehicles[] = {"Falcon Heavy (SpaceX)", "SLS Block 1 (Artemis)"};
+                ImGui::Combo("Launch vehicle", &missionVehicleChoice, vehicles, 2);
+                if (ImGui::BeginCombo("Destination", missionTargets[missionTargetChoice].label.c_str())) {
+                    for (int ti = 0; ti < static_cast<int>(missionTargets.size()); ++ti)
+                        if (ImGui::Selectable(missionTargets[ti].label.c_str(), ti == missionTargetChoice)) missionTargetChoice = ti;
+                    ImGui::EndCombo();
+                }
+                if (ImGui::Button("Plan next launch window & run simulation")) {
+                    const MissionTarget& mt = missionTargets[missionTargetChoice];
+                    if (mt.isEarthMoon) {
+                        activeMission = MissionPlanner::PlanEarthMoon(simTimeDays);
+                    } else {
+                        const OrbitalElements* earthEl = nullptr;
+                        for (size_t pIdx : currentSystem.planetIndices)
+                            if (planets[pIdx].name == "Earth") earthEl = &planets[pIdx].elements;
+                        if (earthEl) activeMission = MissionPlanner::PlanHohmann(*earthEl, planets[mt.planetIdx].elements,
+                                                                                  simTimeDays, planets[mt.planetIdx].name);
+                        activeMission.targetName = mt.label;
+                    }
+                    missionActive = activeMission.valid;
+                }
+                if (missionActive) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Jump to launch")) simTimeDays = activeMission.launchDay;
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear")) missionActive = false;
+                }
+
+                if (missionActive) {
+                    const MissionPlan& m = activeMission;
+                    ImGui::Separator();
+                    ImGui::Text("Target: %s", m.targetName.c_str());
+                    ImGui::Text("Optimal launch: %s", MissionPlanner::DayToCalendar(m.launchDay).c_str());
+                    ImGui::Text("Arrival:        %s", MissionPlanner::DayToCalendar(m.arrivalDay).c_str());
+                    if (m.transferDays < 60.0) ImGui::Text("Transfer time: %.1f days", m.transferDays);
+                    else ImGui::Text("Transfer time: %.0f days (%.1f years)", m.transferDays, m.transferDays / 365.25);
+                    if (m.synodicPeriodDays > 0.0)
+                        ImGui::Text("Windows repeat every ~%.0f days (synodic period)", m.synodicPeriodDays);
+                    ImGui::Text("Departure burn from 200 km LEO: %.2f km/s", m.dvFromLeoKms);
+                    ImGui::Text("Arrival excess speed: %.2f km/s (capture burn not included)", m.vInfArrivalKms);
+
+                    if (simTimeDays < m.launchDay)
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "T-minus %.1f days to launch", m.launchDay - simTimeDays);
+                    else if (simTimeDays < m.arrivalDay)
+                        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "In flight: %.0f%% - ETA %.1f days",
+                                           100.0 * (simTimeDays - m.launchDay) / m.transferDays, m.arrivalDay - simTimeDays);
+                    else
+                        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "Arrived.");
+
+                    ImGui::Separator();
+                    if (missionVehicleChoice == 0) {
+                        ImGui::TextWrapped("Falcon Heavy published capacity (SpaceX, fully expendable): "
+                                           "63,800 kg to LEO, 16,800 kg to Mars, 3,500 kg to Pluto. "
+                                           "It launched NASA's Europa Clipper in Oct 2024.");
+                    } else {
+                        ImGui::TextWrapped("SLS Block 1 (NASA): ~27,000 kg to trans-lunar injection. "
+                                           "Artemis is a LUNAR program - Artemis I (2022) reached the Moon "
+                                           "in ~5 days. No SLS planetary mission is currently planned, so "
+                                           "non-lunar destinations here are hypothetical.");
+                    }
+                    ImGui::TextDisabled("Published payload figures only exist for some destinations - none are");
+                    ImGui::TextDisabled("invented here. Trajectory time/energy don't depend on the vehicle.");
+                    ImGui::Separator();
+                    ImGui::TextWrapped("Idealized minimum-energy (Hohmann) transfer from real orbital "
+                                       "elements. Real outer-planet missions use gravity assists to "
+                                       "arrive far sooner (Voyager 2: Neptune in ~12 yr; New Horizons: "
+                                       "Pluto in ~9.5 yr). Planet inclinations are ignored in the transfer.");
+                    if (m.earthMoonMission)
+                        ImGui::TextDisabled("Earth-Moon transfer is too small to draw at AU scale.");
+                    if (m.arrivalBodyName != m.targetName && !m.earthMoonMission)
+                        ImGui::TextDisabled("Moon targets: arrival in the parent planet's system; the final "
+                                            "capture and moon transfer aren't modeled.");
+                }
+                ImGui::End();
+            }
+        } else if (detailMoonIndex >= 0 && detailMoonIndex < static_cast<int>(detailMoons.size())) {
+            const MoonRecord& moon = detailMoons[detailMoonIndex];
+            const auto& parent = planets[detailPlanetGlobalIndex];
+            PlanetAppearance moonLook = moon.isReal ? SolarSystemAppearance::Lookup(moon.name) : PlanetAppearance{};
+            ImGui::Begin("Moon Detail");
+            ImGui::Text("%s  (moon of %s)", moon.name.c_str(), parent.name.c_str());
+            ImGui::TextDisabled("Scroll to zoom in - surface detail increases as you get closer.");
+            ImGui::Separator();
+            if (moon.isReal) {
+                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.5f, 1.0f), "Real moon - orbital data from published values.");
+                if (moon.radiusKm > 0.0) ImGui::Text("Mean radius: %.1f km", moon.radiusKm);
+                ImGui::Text("Orbital period: %.3f days", moon.orbitPeriodDays);
+                ImGui::Text("Orbit radius: %.1f %s radii", moon.orbitRadiusPlanetRadii, parent.name.c_str());
+                ImGui::Text("Inclination: %.2f deg   Eccentricity: %.4f", moon.inclinationDeg, moon.eccentricity);
+                if (moonLook.isKnown)
+                    ImGui::TextWrapped("Colors and feature types reflect this moon's real, spacecraft-imaged "
+                                       "appearance; fine surface detail is procedurally generated.");
+                else
+                    ImGui::TextDisabled("No hand-modeled appearance for this moon yet - generic rocky look.");
+            } else {
+                ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "SPECULATIVE - not a real detection.");
+                ImGui::TextWrapped("No exomoon has been confirmed around this planet. This body, its orbit, "
+                                   "and its surface are illustrative placeholders only.");
+            }
+            ImGui::Separator();
+            std::string backLbl = "Back to " + parent.name;
+            if (ImGui::Button(backLbl.c_str())) detailMoonIndex = -1;
+            ImGui::SameLine();
+            if (ImGui::Button("Back to System View")) { detailMoonIndex = -1; g_viewMode = ViewMode::System; }
             ImGui::End();
         } else {
             const auto& p = planets[detailPlanetGlobalIndex];
@@ -871,16 +1174,21 @@ int main() {
                 ImGui::TextDisabled("No moons shown for this planet.");
             } else if (detailMoonsAreReal) {
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Moons (real, approximate known orbits):");
-                for (const auto& m : detailMoons) {
+                for (int mi = 0; mi < static_cast<int>(detailMoons.size()); ++mi) {
+                    const auto& m = detailMoons[mi];
                     ImGui::BulletText("%s - period ~%.2f days, inclination ~%.1f deg", m.name.c_str(), m.orbitPeriodDays, m.inclinationDeg);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(("Inspect##dm" + std::to_string(mi)).c_str())) detailMoonIndex = mi;
                 }
             } else {
                 ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "No confirmed moons on record.");
                 ImGui::TextDisabled("The Archive doesn't include exomoon detections (only a couple");
                 ImGui::TextDisabled("of disputed candidates exist in the literature, system-wide).");
                 ImGui::TextDisabled("The moons below are illustrative placeholders only:");
-                for (const auto& m : detailMoons) {
-                    ImGui::BulletText("%s (speculative, not a real detection)", m.name.c_str());
+                for (int mi = 0; mi < static_cast<int>(detailMoons.size()); ++mi) {
+                    ImGui::BulletText("%s (speculative, not a real detection)", detailMoons[mi].name.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(("Inspect##ds" + std::to_string(mi)).c_str())) detailMoonIndex = mi;
                 }
             }
 

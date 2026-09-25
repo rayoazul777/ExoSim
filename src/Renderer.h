@@ -72,16 +72,21 @@ public:
                               float timeSeconds, float seed,
                               const PlanetAppearance* knownAppearance = nullptr);
 
-    // Draws a flat, semi-transparent ring annulus around a planet (e.g.
-    // Saturn) in the model's local XZ plane. innerRadius/outerRadius are
-    // relative to the planet's own display radius (1.0 = planet surface).
-    // The radial banding is a stylized approximation of the real
-    // structure (like Saturn's Cassini Division), not literal gap
-    // positions - there's no simple bulk dataset of exact real gap radii
-    // to draw from.
+    // Draws a planet's rings in the model's local XZ plane from REAL band
+    // radii (NASA ring fact sheets; see SolarSystemAppearance), in units of
+    // the planet's radius. Gaps like the Cassini Division fall at their real
+    // radii because they're simply where no band is. Only the fine ringlet
+    // texture within each band is stylized. Up to 16 bands.
     void renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
-                            float innerRadius, float outerRadius,
-                            const glm::vec3& color, float opacity, float seed);
+                            const std::vector<RingBand>& bands,
+                            const glm::vec3& color, float seed);
+
+    // Fractal octave count for the surface shader - raise it as the camera
+    // nears the surface so zooming reveals new detail (see kSurfaceFS).
+    void setSurfaceDetail(float octaves) { m_surfaceDetailOctaves = octaves; }
+    // Real equilibrium temperature (K) of the body being drawn, or 0 if
+    // unknown - selects illustrative exoplanet variants (lava/ice/hot giant).
+    void setSurfaceEqTemp(float eqTempK) { m_surfaceEqTempK = eqTempK; }
 
     // Draws a full-screen procedural background: stars, soft nebula
     // patches, and a galactic band. Call FIRST in a scene (right after
@@ -130,6 +135,8 @@ private:
     GLuint m_solidSphereVao = 0, m_solidSphereVbo = 0, m_solidSphereEbo = 0;
     GLsizei m_solidSphereIndexCount = 0;
     GLuint m_surfaceShader = 0;
+    float m_surfaceDetailOctaves = 5.0f;
+    float m_surfaceEqTempK = 0.0f;
 
     // Flat unit annulus (inner=1, outer=1 in local space; actual radii
     // are applied in the vertex shader via uniforms) for planet rings.

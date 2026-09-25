@@ -75,6 +75,9 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
         p.numStarsInSystem = static_cast<int>(numOr(row, "sy_snum", 1.0));
         p.galacticLatDeg = numOr(row, "glat", 0.0);
         p.galacticLonDeg = numOr(row, "glon", 0.0);
+        p.hostRaDeg = numOr(row, "ra", 0.0);
+        p.hostDecDeg = numOr(row, "dec", 0.0);
+        p.distPc = numOr(row, "sy_dist", 0.0);
 
         planets.push_back(std::move(p));
     }
@@ -85,30 +88,36 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
 }
 
 std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
-    // Real values (approximate, J2000-epoch orbital angles) so the demo
-    // system is as physically detailed as the real planets we actually
-    // know well - not just placeholder numbers to make the app run.
+    // Real J2000 orbital elements from JPL's "Keplerian Elements for
+    // Approximate Positions of the Major Planets" (Standish), converted to
+    // this app's convention: argPeri = (longitude of perihelion - node),
+    // meanAnomalyAtEpoch = (mean longitude - longitude of perihelion). With
+    // these, simulation day 0 IS the J2000 epoch (2000-01-01 12:00 TT), so
+    // planet positions - and therefore the mission planner's launch windows
+    // - line up with real calendar dates (to within this simple two-body
+    // model's accuracy, ~a degree or so for the inner planets over decades).
+    //
     // eqTempK follows the same "airless blackbody equilibrium" definition
-    // the Archive uses for pl_eqt, so it's directly comparable to
-    // exoplanet values elsewhere in the app (this is why it reads far
-    // colder than each planet's real surface temperature, especially for
-    // Venus, whose greenhouse effect this number deliberately excludes).
+    // the Archive uses for pl_eqt, so it's directly comparable to exoplanet
+    // values elsewhere in the app (this is why it reads far colder than each
+    // planet's real surface temperature, especially Venus, whose greenhouse
+    // effect this number deliberately excludes).
     struct Seed {
         const char* name;
         double a, e, i, per, density;
         double eqTempK, radiusJup, massJup;
-        double argPeriapsisDeg, longAscNodeDeg;
+        double argPeriapsisDeg, longAscNodeDeg, meanAnomalyJ2000Deg;
     };
     static const Seed seeds[] = {
-        // name        a       e      i     per       density  eqTempK  radiusJup  massJup   argPeri  longAscNode
-        {"Mercury",   0.387, 0.206, 7.00,   88.0,   5.43,  440.0, 0.0349, 0.000174,  29.1,  48.3},
-        {"Venus",     0.723, 0.007, 3.39,  224.7,   5.24,  227.0, 0.0865, 0.00257,   54.9,  76.7},
-        {"Earth",     1.000, 0.017, 0.00,  365.25,  5.51,  255.0, 0.0892, 0.00315,  114.2,   0.0},
-        {"Mars",      1.524, 0.093, 1.85,  687.0,   3.93,  210.0, 0.0474, 0.000338, 286.5,  49.6},
-        {"Jupiter",   5.203, 0.049, 1.30, 4331.0,   1.33,  110.0, 1.0,    1.0,      273.9, 100.5},
-        {"Saturn",    9.537, 0.056, 2.49,10747.0,   0.69,   81.0, 0.843,  0.299,    339.4, 113.7},
-        {"Uranus",   19.191, 0.046, 0.77,30589.0,   1.27,   58.0, 0.365,  0.0457,    96.9,  74.0},
-        {"Neptune",  30.07,  0.010, 1.77,59800.0,   1.64,   46.0, 0.354,  0.0536,   276.3, 131.8},
+        // name        a            e           i      per       dens  eqT    rJup    mJup      argPeri  node     M0(J2000)
+        {"Mercury",  0.38709927, 0.20563593, 7.005,   87.969,  5.43, 440.0, 0.0349, 0.000174,  29.127,  48.331, 174.793},
+        {"Venus",    0.72333566, 0.00677672, 3.395,  224.701,  5.24, 227.0, 0.0865, 0.00257,   54.923,  76.680,  50.377},
+        {"Earth",    1.00000261, 0.01671123, 0.000,  365.256,  5.51, 255.0, 0.0892, 0.00315,  102.938,   0.000, 357.527},
+        {"Mars",     1.52371034, 0.09339410, 1.850,  686.980,  3.93, 210.0, 0.0474, 0.000338, 286.497,  49.560,  19.390},
+        {"Jupiter",  5.20288700, 0.04838624, 1.304, 4332.59,   1.33, 110.0, 1.0,    1.0,      274.255, 100.474,  19.668},
+        {"Saturn",   9.53667594, 0.05386179, 2.486,10759.22,   0.69,  81.0, 0.843,  0.299,    338.937, 113.662, 317.355},
+        {"Uranus",  19.18916464, 0.04725744, 0.773,30688.5,    1.27,  58.0, 0.365,  0.0457,    96.937,  74.017, 142.284},
+        {"Neptune", 30.06992276, 0.00859048, 1.770,60182.0,    1.64,  46.0, 0.354,  0.0536,   273.181, 131.784, 259.915},
     };
 
     std::vector<PlanetRecord> out;
@@ -122,6 +131,7 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
         p.elements.inclinationMeasured = true; // hand-coded real values, not archive fallbacks
         p.elements.argPeriapsisDeg = s.argPeriapsisDeg;
         p.elements.longAscNodeDeg = s.longAscNodeDeg;
+        p.elements.meanAnomalyAtEpochDeg = s.meanAnomalyJ2000Deg;
         p.elements.periodDays = s.per;
         p.densityGcm3 = s.density;
         p.eqTempK = s.eqTempK;
@@ -156,28 +166,28 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
         return out[0]; // unreachable given the seeds above
     };
     findPlanet("Earth").moons = {
-        {"Moon", 60.3, 27.32, 5.14, 0.0549, 318.15, 125.08, true},
+        {"Moon", 60.3, 27.32, 5.14, 0.0549, 318.15, 125.08, true, 1737.4},
     };
     findPlanet("Mars").moons = {
-        {"Phobos", 2.76, 0.319, 1.08, 0.0151, 0.0, 0.0, true},
-        {"Deimos", 6.92, 1.263, 1.79, 0.00033, 0.0, 0.0, true},
+        {"Phobos", 2.76, 0.319, 1.08, 0.0151, 0.0, 0.0, true, 11.3},
+        {"Deimos", 6.92, 1.263, 1.79, 0.00033, 0.0, 0.0, true, 6.2},
     };
     findPlanet("Jupiter").moons = {
-        {"Io", 5.9, 1.77, 0.04, 0.0041, 0.0, 0.0, true},
-        {"Europa", 9.4, 3.55, 0.47, 0.009, 0.0, 0.0, true},
-        {"Ganymede", 15.0, 7.15, 0.20, 0.0013, 0.0, 0.0, true},
-        {"Callisto", 26.3, 16.69, 0.19, 0.0074, 0.0, 0.0, true},
+        {"Io", 5.9, 1.77, 0.04, 0.0041, 0.0, 0.0, true, 1821.6},
+        {"Europa", 9.4, 3.55, 0.47, 0.009, 0.0, 0.0, true, 1560.8},
+        {"Ganymede", 15.0, 7.15, 0.20, 0.0013, 0.0, 0.0, true, 2634.1},
+        {"Callisto", 26.3, 16.69, 0.19, 0.0074, 0.0, 0.0, true, 2410.3},
     };
     findPlanet("Saturn").moons = {
-        {"Titan", 20.3, 15.95, 0.35, 0.0288, 0.0, 0.0, true},
-        {"Rhea", 8.75, 4.52, 0.345, 0.001258, 0.0, 0.0, true},
+        {"Titan", 20.3, 15.95, 0.35, 0.0288, 0.0, 0.0, true, 2574.7},
+        {"Rhea", 8.75, 4.52, 0.345, 0.001258, 0.0, 0.0, true, 763.8},
     };
     findPlanet("Uranus").moons = {
-        {"Titania", 17.6, 8.71, 0.34, 0.0011, 0.0, 0.0, true},
-        {"Oberon", 23.6, 13.46, 0.058, 0.0014, 0.0, 0.0, true},
+        {"Titania", 17.6, 8.71, 0.34, 0.0011, 0.0, 0.0, true, 788.4},
+        {"Oberon", 23.6, 13.46, 0.058, 0.0014, 0.0, 0.0, true, 761.4},
     };
     findPlanet("Neptune").moons = {
-        {"Triton", 14.3, 5.877, 157.0, 0.000016, 0.0, 0.0, true},
+        {"Triton", 14.3, 5.877, 157.0, 0.000016, 0.0, 0.0, true, 1353.4},
     };
 
     return out;
@@ -204,6 +214,9 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
             sys.numStars = planets[i].numStarsInSystem;
             sys.galacticLatDeg = planets[i].galacticLatDeg;
             sys.galacticLonDeg = planets[i].galacticLonDeg;
+            sys.hostRaDeg = planets[i].hostRaDeg;
+            sys.hostDecDeg = planets[i].hostDecDeg;
+            sys.distPc = planets[i].distPc;
             systems.push_back(std::move(sys));
         } else {
             it->planetIndices.push_back(i);
@@ -335,6 +348,19 @@ void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord
         p.elements.argPeriapsisDeg = numOr(row, "pl_orblper", 0.0);
         p.elements.longAscNodeDeg = numOr(row, "long_asc_node", 0.0);
 
+        // SBDB gives the mean anomaly at ITS OWN osculating epoch (a recent
+        // Julian Date) - propagate it back to J2000 so dwarf planets share
+        // the same day-0 = J2000 convention as the 8 main planets above.
+        double maDeg = numOr(row, "mean_anomaly_deg", -1.0);
+        double epochJd = numOr(row, "epoch_jd", 0.0);
+        if (maDeg >= 0.0 && epochJd > 0.0) {
+            double daysFromJ2000 = epochJd - 2451545.0;
+            double m0 = maDeg - (360.0 / per) * daysFromJ2000;
+            m0 = std::fmod(m0, 360.0);
+            if (m0 < 0.0) m0 += 360.0;
+            p.elements.meanAnomalyAtEpochDeg = m0;
+        }
+
         double diameterKm = numOr(row, "diameter_km", 0.0);
         if (diameterKm > 0.0) {
             p.radiusJupiter = (diameterKm / 2.0) / kJupiterRadiusKm;
@@ -400,9 +426,68 @@ std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) 
         s.vmag = vmag;
         s.hasBv = row.contains("bv") && !row["bv"].is_null();
         if (s.hasBv) s.bv = numOr(row, "bv", 0.6);
+        s.pmRaMasYr = numOr(row, "pm_ra_mas_yr", 0.0);
+        s.pmDecMasYr = numOr(row, "pm_dec_mas_yr", 0.0);
+        s.parallaxMas = numOr(row, "parallax_mas", 0.0);
         stars.push_back(s);
     }
 
     std::cout << "[Dataset] Loaded " << stars.size() << " real stars from the Hipparcos catalog.\n";
     return stars;
+}
+
+void Dataset::LoadDoubleStars(const std::string& path, std::vector<StarSystem>& systems) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[Dataset] No double_stars.json found - companion stars keep a schematic "
+                  << "separation (run fetch_exoplanets.py to pull the Washington Double Star catalog).\n";
+        return;
+    }
+    json root;
+    try { file >> root; } catch (const std::exception& e) {
+        std::cerr << "[Dataset] double_stars.json parse error: " << e.what() << "\n";
+        return;
+    }
+
+    struct Pair { double ra, dec, sepArcsec; };
+    std::vector<Pair> pairs;
+    pairs.reserve(root.size());
+    for (const auto& row : root) {
+        double ra = numOr(row, "ra_deg", -1.0), dec = numOr(row, "dec_deg", -999.0);
+        double sep = numOr(row, "sep_arcsec", -1.0);
+        if (ra < 0.0 || dec < -90.0 || sep <= 0.0) continue;
+        pairs.push_back({ra, dec, sep});
+    }
+    // Sort by declination so each lookup only scans a thin dec band
+    // instead of every WDS entry for every system.
+    std::sort(pairs.begin(), pairs.end(), [](const Pair& a, const Pair& b) { return a.dec < b.dec; });
+
+    constexpr double kMatchRadiusArcsec = 10.0; // WDS positions are ~arcsec-precise at best
+    constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+    int matched = 0;
+
+    for (auto& sys : systems) {
+        if (sys.numStars <= 1 || sys.companions.empty() || sys.distPc <= 0.0) continue;
+        double tol = kMatchRadiusArcsec / 3600.0;
+        auto lo = std::lower_bound(pairs.begin(), pairs.end(), sys.hostDecDeg - tol,
+            [](const Pair& p, double d) { return p.dec < d; });
+        double bestDist = 1e9; const Pair* best = nullptr;
+        for (auto it = lo; it != pairs.end() && it->dec <= sys.hostDecDeg + tol; ++it) {
+            double dRa = (it->ra - sys.hostRaDeg) * std::cos(sys.hostDecDeg * kDegToRad);
+            if (dRa > 180.0) dRa -= 360.0; else if (dRa < -180.0) dRa += 360.0;
+            double dist = std::sqrt(dRa * dRa + (it->dec - sys.hostDecDeg) * (it->dec - sys.hostDecDeg)) * 3600.0;
+            if (dist < kMatchRadiusArcsec && dist < bestDist) { bestDist = dist; best = &*it; }
+        }
+        if (best) {
+            // 1 arcsec at 1 parsec subtends exactly 1 AU (that's the parsec's
+            // definition), so arcsec x pc = projected AU. Applied to the first
+            // companion only - WDS rows describe one specific pair each, and
+            // this simple positional match can't tell which component of a
+            // triple-plus system a given row refers to.
+            sys.companions[0].projectedSepAU = best->sepArcsec * sys.distPc;
+            ++matched;
+        }
+    }
+    std::cout << "[Dataset] Matched " << matched
+              << " multi-star system(s) to real WDS separations (projected, i.e. lower bounds).\n";
 }

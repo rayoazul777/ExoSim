@@ -23,6 +23,9 @@
 //                           the whole multi-thousand-row dataset.
 //   --skip-dwarf-planets    Skip the NASA/JPL SBDB dwarf-planet fetch (5 quick
 //                           extra requests to a second endpoint)
+//   --star-vmag-limit M     Faintest star magnitude to fetch (default 6.5 = naked eye,
+//                           ~9k stars; 8.0 ~ 40k; 12.4 = full Hipparcos, ~118k)
+//   --skip-double-stars     Skip the Washington Double Star catalog fetch
 //   --skip-star-catalog     Skip the VizieR/Hipparcos star catalog fetch
 //                           (~9,000-row CSV request to a third endpoint)
 
@@ -51,6 +54,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cctype>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -177,6 +181,12 @@ std::string HttpGetText(CURL* curl, const std::string& url, bool verifySsl = tru
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verifySsl ? 1L : 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verifySsl ? 2L : 0L);
+#ifdef CURLSSLOPT_NATIVE_CA
+    // Trust the OS's own certificate store (curl >= 7.71). On Windows this is
+    // the proper fix for "unable to get local issuer certificate" errors, so
+    // the insecure fallback below should rarely, if ever, be needed.
+    curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NATIVE_CA));
+#endif
 
     CURLcode res = curl_easy_perform(curl);
     // Reset to the secure default immediately so an insecure fallback
@@ -215,17 +225,13 @@ std::string ToUpper(std::string s) {
     return s;
 }
 
-// Queries CDS's VizieR TAP service for the Hipparcos catalog: real right
-// ascension, declination, visual magnitude, and B-V color index for
-// every star down to the naked-eye limit. Returns a JSON array shaped to
-// match what Dataset::LoadStarCatalog expects: {"ra_deg","dec_deg","vmag","bv"}.
-// Parses CSV defensively - any row that doesn't parse cleanly is
-// skipped rather than aborting the whole fetch.
-json FetchStarCatalog(CURL* curl) {
-    std::ostringstream adql;
-    adql << "SELECT HIP, RAICRS, DEICRS, Vmag, \"B-V\" FROM \"I/239/hip_main\" WHERE Vmag<=" << kStarCatalogVmagLimit;
-
-    char* escaped = curl_easy_escape(curl, adql.str().c_str(), static_cast<int>(adql.str().size()));
+// Runs one ADQL query against CDS VizieR's TAP service and returns parsed
+// CSV rows (header first), or empty on failure. Certificate handling:
+// secure (with the OS-native CA store where curl supports it) first, then
+// ONE retry without verification - only after a genuine certificate error,
+// only for this public, non-sensitive astronomical data, always logged.
+std::vector<std::vector<std::string>> VizierCsvRows(CURL* curl, const std::string& adql, const std::string& label) {
+    char* escaped = curl_easy_escape(curl, adql.c_str(), static_cast<int>(adql.size()));
     std::string url = kVizierTapBase + "?REQUEST=doQuery&LANG=ADQL&FORMAT=CSV&QUERY=" + escaped;
     curl_free(escaped);
 
@@ -234,93 +240,126 @@ json FetchStarCatalog(CURL* curl) {
         text = HttpGetText(curl, url);
     } catch (const std::exception& e) {
         std::string what = e.what();
-        bool looksLikeCertError = what.find("SSL certificate") != std::string::npos
-            || what.find("certificate") != std::string::npos
-            || what.find("SSL_ERROR") != std::string::npos;
-        if (!looksLikeCertError) {
-            std::cerr << "WARNING: couldn't fetch the Hipparcos star catalog (" << e.what()
-                      << ") - the skybox will fall back to its procedural stars, but ExoSim still runs fine.\n";
-            return json::array();
+        bool certError = what.find("certificate") != std::string::npos || what.find("SSL") != std::string::npos;
+        if (!certError) {
+            std::cerr << "WARNING: couldn't fetch " << label << " (" << what << ").\n";
+            return {};
         }
-
-        // Some environments can't verify tapvizier.cds.unistra.fr's
-        // certificate chain even though other HTTPS endpoints above work
-        // fine (a local trust-store gap, not a problem with the query or
-        // endpoint). Retry once without verification, ONLY after a
-        // genuine verification failure, and ONLY for this one request -
-        // this catalog is public, non-sensitive astronomical data, so
-        // that's a low-stakes trade for a background starfield.
-        std::cerr << "WARNING: TLS certificate verification failed for VizieR (" << e.what()
-                  << ") - retrying this one request without verification.\n";
+        std::cerr << "WARNING: TLS certificate verification failed for VizieR (" << what
+                  << ") - retrying this one public-data request without verification.\n";
         try {
             text = HttpGetText(curl, url, /*verifySsl=*/false);
         } catch (const std::exception& e2) {
-            std::cerr << "WARNING: retry without certificate verification also failed (" << e2.what()
-                      << ") - the skybox will fall back to its procedural stars, but ExoSim still runs fine.\n";
-            return json::array();
+            std::cerr << "WARNING: retry for " << label << " also failed (" << e2.what() << ").\n";
+            return {};
         }
     }
 
+    std::vector<std::vector<std::string>> rows;
     std::istringstream stream(text);
     std::string line;
-    std::vector<std::vector<std::string>> rows;
     while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         rows.push_back(SplitCsvLine(line));
     }
-    if (rows.empty()) {
-        std::cerr << "WARNING: Hipparcos catalog response had no usable rows.\n";
+    if (rows.size() < 2) {
+        std::cerr << "WARNING: " << label << " response had no data rows. First 300 chars:\n"
+                  << text.substr(0, 300) << "\n";
+        return {};
+    }
+    for (auto& h : rows[0]) {
+        while (!h.empty() && (h.front() == '_' || h.front() == ' ')) h.erase(h.begin());
+        while (!h.empty() && h.back() == ' ') h.pop_back();
+        h = ToUpper(h);
+    }
+    return rows;
+}
+
+int ColIndex(const std::vector<std::string>& header, std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        auto it = std::find(header.begin(), header.end(), name);
+        if (it != header.end()) return static_cast<int>(it - header.begin());
+    }
+    return -1;
+}
+
+bool CellNum(const std::vector<std::string>& row, int i, double& out) {
+    if (i < 0 || i >= static_cast<int>(row.size()) || row[i].empty()) return false;
+    try { out = std::stod(row[i]); return true; } catch (...) { return false; }
+}
+
+// Real Hipparcos catalog (ESA; VizieR I/239/hip_main): position, magnitude,
+// B-V color, proper motion (pmRA includes cos(dec)) and parallax, for every
+// star down to `vmagLimit`. Shape matches Dataset::LoadStarCatalog.
+json FetchStarCatalog(CURL* curl, double vmagLimit) {
+    std::ostringstream adql;
+    adql << "SELECT HIP, RAICRS, DEICRS, Vmag, \"B-V\", pmRA, pmDE, Plx FROM \"I/239/hip_main\" WHERE Vmag<=" << vmagLimit;
+    auto rows = VizierCsvRows(curl, adql.str(), "the Hipparcos star catalog");
+    if (rows.empty()) return json::array();
+    const auto& h = rows[0];
+    int raI = ColIndex(h, {"RAICRS", "RA_ICRS", "RA(ICRS)"}), deI = ColIndex(h, {"DEICRS", "DE_ICRS", "DE(ICRS)"});
+    int vmI = ColIndex(h, {"VMAG"}), bvI = ColIndex(h, {"B-V", "B_V", "BV"});
+    int prI = ColIndex(h, {"PMRA"}), pdI = ColIndex(h, {"PMDE"}), pxI = ColIndex(h, {"PLX"});
+    if (raI < 0 || deI < 0 || vmI < 0) {
+        std::cerr << "WARNING: unexpected Hipparcos CSV header - skipping star catalog.\n";
         return json::array();
     }
-
-    std::vector<std::string> header;
-    for (auto h : rows[0]) {
-        while (!h.empty() && h.front() == '_') h.erase(h.begin());
-        header.push_back(ToUpper(h));
+    json out = json::array();
+    for (size_t r = 1; r < rows.size(); ++r) {
+        double ra, dec, vmag, v;
+        if (!CellNum(rows[r], raI, ra) || !CellNum(rows[r], deI, dec) || !CellNum(rows[r], vmI, vmag)) continue;
+        json rec{{"ra_deg", ra}, {"dec_deg", dec}, {"vmag", vmag}};
+        rec["bv"] = CellNum(rows[r], bvI, v) ? json(v) : json(nullptr);
+        rec["pm_ra_mas_yr"] = CellNum(rows[r], prI, v) ? json(v) : json(nullptr);
+        rec["pm_dec_mas_yr"] = CellNum(rows[r], pdI, v) ? json(v) : json(nullptr);
+        rec["parallax_mas"] = CellNum(rows[r], pxI, v) ? json(v) : json(nullptr);
+        out.push_back(rec);
     }
-    auto colIndex = [&](std::initializer_list<const char*> names) -> int {
-        for (const char* name : names) {
-            auto it = std::find(header.begin(), header.end(), name);
-            if (it != header.end()) return static_cast<int>(it - header.begin());
-        }
-        return -1;
-    };
+    return out;
+}
 
-    int raI = colIndex({"RAICRS", "RA_ICRS", "RA(ICRS)"});
-    int deI = colIndex({"DEICRS", "DE_ICRS", "DE(ICRS)"});
-    int vmagI = colIndex({"VMAG"});
-    int bvI = colIndex({"B-V", "B_V", "BV"});
+// Decimal degrees, or sexagesimal ("hh mm ss.s" / "dd:mm:ss") if needed.
+bool ParseAngle(std::string text, bool isRa, double& out) {
+    try { size_t used = 0; out = std::stod(text, &used); if (used == text.size()) return true; } catch (...) {}
+    for (char& c : text) if (c == ':') c = ' ';
+    std::istringstream ss(text);
+    std::string p0; double b = 0.0, c = 0.0;
+    if (!(ss >> p0 >> b)) return false;
+    ss >> c;
+    try {
+        double sign = (!p0.empty() && p0[0] == '-') ? -1.0 : 1.0;
+        double v = std::fabs(std::stod(p0)) + b / 60.0 + c / 3600.0;
+        out = isRa ? v * 15.0 : sign * v;
+        return true;
+    } catch (...) { return false; }
+}
 
-    if (raI < 0 || deI < 0 || vmagI < 0) {
-        std::cerr << "WARNING: unexpected Hipparcos CSV header, couldn't find RA/Dec/Vmag columns, "
-                  << "skipping star catalog.\n";
+// Washington Double Star catalog (USNO; VizieR B/wds/wds): position and most
+// recent measured angular separation per pair. Shape matches
+// Dataset::LoadDoubleStars (which converts separation x distance -> AU).
+json FetchDoubleStars(CURL* curl) {
+    auto rows = VizierCsvRows(curl, "SELECT RAJ2000, DEJ2000, sep1, sep2 FROM \"B/wds/wds\"",
+                              "the Washington Double Star catalog");
+    if (rows.empty()) return json::array();
+    const auto& h = rows[0];
+    int raI = ColIndex(h, {"RAJ2000", "RA_J2000"}), deI = ColIndex(h, {"DEJ2000", "DE_J2000"});
+    int s1I = ColIndex(h, {"SEP1"}), s2I = ColIndex(h, {"SEP2"});
+    if (raI < 0 || deI < 0 || (s1I < 0 && s2I < 0)) {
+        std::cerr << "WARNING: unexpected WDS CSV header - skipping double stars.\n";
         return json::array();
     }
-
-    json results = json::array();
+    json out = json::array();
     for (size_t r = 1; r < rows.size(); ++r) {
         const auto& row = rows[r];
-        int maxNeeded = std::max({raI, deI, vmagI});
-        if (static_cast<int>(row.size()) <= maxNeeded) continue;
-
-        double ra = JsonNumOrNull(row[raI]);
-        double dec = JsonNumOrNull(row[deI]);
-        double vmag = JsonNumOrNull(row[vmagI]);
-        if (row[raI].empty() || row[deI].empty() || row[vmagI].empty()) continue;
-
-        json record;
-        record["ra_deg"] = ra;
-        record["dec_deg"] = dec;
-        record["vmag"] = vmag;
-        if (bvI >= 0 && bvI < static_cast<int>(row.size()) && !row[bvI].empty()) {
-            record["bv"] = JsonNumOrNull(row[bvI]);
-        } else {
-            record["bv"] = nullptr;
-        }
-        results.push_back(record);
+        if (raI >= static_cast<int>(row.size()) || deI >= static_cast<int>(row.size())) continue;
+        double ra, dec, sep;
+        if (!ParseAngle(row[raI], true, ra) || !ParseAngle(row[deI], false, dec)) continue;
+        if (!CellNum(row, s2I, sep) && !CellNum(row, s1I, sep)) continue; // sep2 = most recent
+        if (sep <= 0.0) continue;
+        out.push_back(json{{"ra_deg", ra}, {"dec_deg", dec}, {"sep_arcsec", sep}});
     }
-
-    return results;
+    return out;
 }
 
 // Queries NASA/JPL's SBDB API for each of the 5 IAU-recognized dwarf
@@ -378,6 +417,8 @@ json FetchDwarfPlanets(CURL* curl) {
         record["pl_orblper"] = elements.count("w") ? json(elements["w"]) : json(nullptr);
         record["pl_orbper"] = elements.count("per") ? json(elements["per"]) : json(nullptr);
         record["long_asc_node"] = elements.count("om") ? json(elements["om"]) : json(nullptr);
+        record["mean_anomaly_deg"] = elements.count("ma") ? json(elements["ma"]) : json(nullptr);
+        record["epoch_jd"] = data["orbit"].contains("epoch") ? json(JsonNumOrNull(data["orbit"]["epoch"])) : json(nullptr);
         record["diameter_km"] = diameterKm > 0.0 ? json(diameterKm) : json(nullptr);
         record["gm"] = gm > 0.0 ? json(gm) : json(nullptr);
         record["source"] = "NASA/JPL SBDB";
@@ -434,6 +475,8 @@ int main(int argc, char** argv) {
     int topN = 0;
     bool skipDwarfPlanets = false;
     bool skipStarCatalog = false;
+    bool skipDoubleStars = false;
+    double starVmagLimit = kStarCatalogVmagLimit;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -442,6 +485,8 @@ int main(int argc, char** argv) {
         else if (arg == "--top-systems" && i + 1 < argc) topN = std::stoi(argv[++i]);
         else if (arg == "--skip-dwarf-planets") skipDwarfPlanets = true;
         else if (arg == "--skip-star-catalog") skipStarCatalog = true;
+        else if (arg == "--skip-double-stars") skipDoubleStars = true;
+        else if (arg == "--star-vmag-limit" && i + 1 < argc) starVmagLimit = std::stod(argv[++i]);
     }
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -488,12 +533,20 @@ int main(int argc, char** argv) {
                       << " (NASA/JPL SBDB - a different NASA source from the Exoplanet Archive above)\n";
         }
 
-        json starRows = skipStarCatalog ? json::array() : FetchStarCatalog(curl);
+        json starRows = skipStarCatalog ? json::array() : FetchStarCatalog(curl, starVmagLimit);
         if (!starRows.empty()) {
             std::string starPath = outDir + "/star_catalog.json";
             std::ofstream(starPath) << starRows.dump();
             std::cout << "Wrote " << starRows.size() << " real star positions to " << starPath
                       << " (Hipparcos catalog via CDS VizieR TAP - a third, separate data source)\n";
+        }
+
+        json doubleRows = skipDoubleStars ? json::array() : FetchDoubleStars(curl);
+        if (!doubleRows.empty()) {
+            std::string dsPath = outDir + "/double_stars.json";
+            std::ofstream(dsPath) << doubleRows.dump();
+            std::cout << "Wrote " << doubleRows.size() << " double-star separations to " << dsPath
+                      << " (Washington Double Star catalog via CDS VizieR)\n";
         }
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";
