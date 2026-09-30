@@ -98,7 +98,7 @@ namespace {
             c.surfaceGuess = "Likely no solid surface - probably a rocky/icy core under a deep envelope.";
             c.atmosphereGuess = "Probably a substantial hydrogen/helium or volatile-rich envelope (unmeasured)." + temperatureNote(eqTempK, isRockySized);
             c.displayColor = glm::vec3(0.3f, 0.6f, 0.9f);
-        } else if (rEarth < 10.0) {
+        } else if (rEarth < 6.0) { // NASA size categories: Neptune-size 2-6 Re, Jupiter-size 6-15 Re
             c.type = PlanetType::IceGiant;
             c.typeLabel = "Ice giant (Neptune/Uranus-like)";
             c.surfaceGuess = "No solid surface expected - a deep ice/gas envelope over a small core.";
@@ -180,7 +180,16 @@ namespace {
 PlanetClassification PlanetClassifier::Classify(const PlanetRecord& planet) {
     PlanetClassification result;
 
-    if (planet.densityGcm3 > 0.0) {
+    // Radius wins for large planets: bulk density can't separate giants from
+    // small volatile-rich worlds (Jupiter's 1.33 g/cm^3 overlaps icy
+    // mini-Neptunes, and a density-only rule mislabeled Jupiter - caught by
+    // test CLS-2). Nothing rocky or icy reaches 6 Earth radii, which is
+    // where NASA's "Jupiter-size" category begins, so above that, radius
+    // alone is decisive. Below it, density remains the better signal.
+    double rEarthKnown = planet.radiusJupiter * kJupiterRadiiToEarth;
+    if (planet.radiusJupiter > 0.0 && rEarthKnown >= 6.0) {
+        result = classifyByRadiusEarth(rEarthKnown, planet.eqTempK);
+    } else if (planet.densityGcm3 > 0.0) {
         result = classifyByDensity(planet.densityGcm3, planet.eqTempK);
     } else if (planet.radiusJupiter > 0.0) {
         result = classifyByRadiusEarth(planet.radiusJupiter * kJupiterRadiiToEarth, planet.eqTempK);

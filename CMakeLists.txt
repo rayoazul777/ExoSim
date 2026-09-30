@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ExoSim LANGUAGES CXX)
+project(ExoSim VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,3 +56,18 @@ target_link_libraries(FetchData PRIVATE CURL::libcurl nlohmann_json::nlohmann_js
 add_custom_command(TARGET FetchData POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:FetchData>/data
 )
+
+# --- Validation suite (no GPU needed) - see docs/VALIDATION.md ---
+# Build + run:  ctest --output-on-failure   (or run ExoSimTests directly;
+# ExoSimTests --markdown prints the results table used in the docs)
+enable_testing()
+add_executable(ExoSimTests
+    tests/test_physics.cpp
+    src/KeplerOrbit.cpp
+    src/MissionPlanner.cpp
+    src/Dataset.cpp
+    src/PlanetClassifier.cpp
+)
+target_include_directories(ExoSimTests PRIVATE src)
+target_link_libraries(ExoSimTests PRIVATE glm::glm nlohmann_json::nlohmann_json)
+add_test(NAME physics_and_data_validation COMMAND ExoSimTests)

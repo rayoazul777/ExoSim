@@ -207,12 +207,18 @@ namespace {
     // from Hipparcos) converted to a unit direction in the app's own
     // arbitrary world frame - y-up to match this engine's convention.
     glm::vec3 raDecToDirection(double raDeg, double decDeg) {
-        double raRad = glm::radians(raDeg);
-        double decRad = glm::radians(decDeg);
-        double x = std::cos(decRad) * std::cos(raRad);
-        double y = std::sin(decRad);
-        double z = std::cos(decRad) * std::sin(raRad);
-        return glm::normalize(glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)));
+        // Equatorial (ICRS RA/Dec) unit vector: x toward the vernal equinox,
+        // z toward the celestial north pole.
+        double ra = glm::radians(raDeg), dec = glm::radians(decDeg);
+        glm::dvec3 eq(std::cos(dec) * std::cos(ra), std::cos(dec) * std::sin(ra), std::sin(dec));
+        // Rotate equatorial -> ecliptic by the J2000 obliquity (23.4393 deg)
+        // so stars share the planets' frame, then map into the y-up world
+        // with the same eclipticToWorld() the orbits use. (Previously stars
+        // stayed equatorial while planets were ecliptic, leaving the real
+        // starfield tilted ~23 deg relative to the planetary orbits.)
+        const double eps = glm::radians(23.4392911);
+        glm::dvec3 ecl(eq.x, eq.y * std::cos(eps) + eq.z * std::sin(eps), -eq.y * std::sin(eps) + eq.z * std::cos(eps));
+        return glm::normalize(glm::vec3(eclipticToWorld(ecl)));
     }
 
     // NASA's Exoplanet Archive contains no confirmed exomoon detections
@@ -357,7 +363,10 @@ int main() {
         std::vector<glm::vec3> dirs, colors;
         std::vector<float> sizes;
         dirs.reserve(starCatalog.size()); colors.reserve(starCatalog.size()); sizes.reserve(starCatalog.size());
-        const double dtYears = skyEpochOffsetYears;
+        // Hipparcos positions are at catalog epoch J1991.25, so proper motion
+        // is applied from 1991.25 to the current date, plus the slider offset.
+        const double yearsSinceCatalogEpoch = 8.75 + MissionPlanner::NowDaysSinceJ2000() / 365.25;
+        const double dtYears = yearsSinceCatalogEpoch + skyEpochOffsetYears;
 
         for (const auto& st : starCatalog) {
             double cosDec = std::cos(glm::radians(st.decDeg));

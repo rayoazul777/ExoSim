@@ -12,15 +12,24 @@ namespace {
     // Pulls a numeric field out of a JSON row, returning defaultVal
     // if the field is missing or null (NASA archive data has a LOT
     // of nulls - not every planet has every parameter measured).
+    // Type-checked field access: a field that's present but has the wrong
+    // JSON type (e.g. a number arriving as a string, or a row that isn't an
+    // object at all) falls back to the default instead of throwing. Before
+    // this, one malformed catalog row crashed the whole app - found by the
+    // DAT-1 robustness test in tests/test_physics.cpp.
     double numOr(const json& row, const char* key, double defaultVal) {
-        if (row.contains(key) && !row[key].is_null()) {
-            return row[key].get<double>();
+        if (!row.is_object() || !row.contains(key)) return defaultVal;
+        const json& v = row[key];
+        if (v.is_number()) return v.get<double>();
+        if (v.is_string()) {
+            try { size_t used = 0; double d = std::stod(v.get<std::string>(), &used);
+                  if (used == v.get<std::string>().size()) return d; } catch (...) {}
         }
         return defaultVal;
     }
 
     std::string strOr(const json& row, const char* key, const std::string& defaultVal) {
-        if (row.contains(key) && !row[key].is_null()) {
+        if (row.is_object() && row.contains(key) && row[key].is_string()) {
             return row[key].get<std::string>();
         }
         return defaultVal;
@@ -54,8 +63,8 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
         if (semiMajorAxis <= 0.0 || period <= 0.0) continue;
 
         PlanetRecord p;
-        p.name = row.value("pl_name", "Unnamed");
-        p.hostStar = row.value("hostname", "Unknown");
+        p.name = strOr(row, "pl_name", "Unnamed");
+        p.hostStar = strOr(row, "hostname", "Unknown");
         p.elements.semiMajorAxisAU = semiMajorAxis;
         p.elements.periodDays = period;
         p.elements.eccentricity = numOr(row, "pl_orbeccen", 0.0);

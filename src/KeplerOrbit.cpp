@@ -14,15 +14,33 @@ double KeplerOrbit::solveEccentricAnomaly(double M, double e) {
     while (M > kPi)  M -= 2.0 * kPi;
     while (M < -kPi) M += 2.0 * kPi;
 
-    // Initial guess: for low/moderate eccentricity, M itself is fine.
-    double E = (e < 0.8) ? M : kPi;
+    // Initial guess. For high eccentricity, start at pi with the SAME SIGN
+    // as M: Newton's method then converges monotonically for any e < 1.
+    // (An earlier version always started at +pi, which for negative M -
+    // just past apoapsis - threw Newton toward E ~ 0, where the derivative
+    // 1 - e*cos(E) nearly vanishes, and returned a wrong root: positions
+    // jumped by several AU on e >= 0.9 orbits. Caught by the KEP-4/KEP-5
+    // conservation-law tests in tests/test_physics.cpp.)
+    double E = (e < 0.8) ? M : (M >= 0.0 ? kPi : -kPi);
 
+    bool converged = false;
     for (int i = 0; i < 50; ++i) {
         double f  = E - e * std::sin(E) - M;
         double fp = 1.0 - e * std::cos(E);
         double dE = f / fp;
         E -= dE;
-        if (std::fabs(dE) < 1e-10) break;
+        if (std::fabs(dE) < 1e-12) { converged = true; break; }
+    }
+
+    // Guaranteed fallback: f(E) = E - e sin E - M is monotonic on
+    // [-pi, pi] with f(-pi) <= 0 <= f(pi), so bisection always converges.
+    if (!converged || std::fabs(E - e * std::sin(E) - M) > 1e-9) {
+        double lo = -kPi, hi = kPi;
+        for (int i = 0; i < 100; ++i) {
+            double mid = 0.5 * (lo + hi);
+            if (mid - e * std::sin(mid) - M < 0.0) lo = mid; else hi = mid;
+        }
+        E = 0.5 * (lo + hi);
     }
     return E;
 }

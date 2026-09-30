@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 """
-Pulls confirmed-planet orbital elements from the NASA Exoplanet Archive's
-TAP service and writes them to data/exoplanets.json for ExoSim to load.
+Fetches ExoSim's real data from four public sources (no API keys needed)
+and writes JSON files next to this script:
 
-No API key needed - this is a public, unauthenticated endpoint.
-Docs: https://exoplanetarchive.ipac.caltech.edu/docs/TAP/usingTAP.html
+  exoplanets.json     NASA Exoplanet Archive, `ps` table (TAP)
+  stellar_hosts.json  NASA Exoplanet Archive, `stellarhosts` table (TAP)
+  dwarf_planets.json  NASA/JPL Small-Body Database API
+  star_catalog.json   Hipparcos catalogue via CDS VizieR (TAP)
+  double_stars.json   Washington Double Star catalog via CDS VizieR (TAP)
+
+Any source that fails is skipped with a warning; ExoSim disables only the
+feature that file feeds. See docs/DATA_SOURCES.md for citations and terms.
 
 Usage:
-    python fetch_exoplanets.py [--limit N] [--out PATH]
+    python fetch_exoplanets.py [--limit N] [--star-vmag-limit M]
+                               [--skip-dwarf-planets] [--skip-star-catalog]
+                               [--skip-double-stars]
+
+Tip: `pip install certifi` fixes TLS verification failures against
+VizieR on some Windows Python installs (used automatically when present).
 """
 
 import argparse
