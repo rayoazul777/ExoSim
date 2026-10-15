@@ -114,13 +114,50 @@ console states which one.
 
 ## Demo
 
-*To be added:* `docs/images/` screenshots and a 60–90 s video. Suggested
-sequence:
-1. Load a real multi-planet exoplanet system.
-2. Show measured vs. estimated values in the detail panel.
-3. Toggle log scale and run time forward.
-4. Open Sol and plan a Mars mission, showing the launch window, Δv and duration.
-5. End on a terminal running `ctest` and the data fetch.
+Screenshots from the Windows build (v0.6.0). A demo video is still to come.
+
+### Mission planning: Earth to Mars
+
+![Mission Planner showing the next Earth-to-Mars launch window, with the transfer arc and spacecraft drawn over Sol](docs/images/03-mars-launch-window.png)
+
+*Planning a Mars mission from a simulated date of September 2027. The
+planner finds the next window (launch 2028-12-06, arrival 2029-08-14), a
+252-day transfer at 3.61 km/s from low Earth orbit, with windows repeating
+every ~780 days. The orange arc is the transfer orbit; log-scale distances
+and reference rings (10 AU to 1,000 AU) are on.*
+
+![The same mission after arrival, with the spacecraft at Mars's orbit](docs/images/04-mars-arrival.png)
+
+*The same mission, run forward past the arrival date. The spacecraft has
+followed the arc to Mars's orbit, and the status reads "Arrived".*
+
+### Sol, the home system
+
+![Sol in the default linear view, with the control panel, system list, and Mission Planner](docs/images/02-sol-overview.png)
+
+*Sol at true (linear) scale. The control panel shows the simulation date,
+the 8,870 Hipparcos stars visible from Earth, the host star's measured
+properties, and Sol's 13 bodies, including the five dwarf planets from
+NASA/JPL's Small-Body Database.*
+
+### An exoplanet multi-star system: Kepler-20
+
+![Kepler-20's six planets around a G-type host star with its companion](docs/images/05-kepler-20-multistar.png)
+
+*Kepler-20, a real six-planet system 282.6 parsecs away. The panel flags
+it as a two-star system and labels the companion's position and motion as
+schematic, since the Archive has no separation for it. The starfield is
+recomputed as it would appear from Kepler-20 using real parallaxes, and
+the panel notes that our Sun is too faint to see from there (magnitude
+12.1). Moons listed for these planets are labeled as candidates.*
+
+### Startup: loading real data
+
+![Console output listing the planets, dwarf planets, multi-star systems and stars loaded at startup](docs/images/01-startup-data-load.png)
+
+*Startup log. ExoSim loads 3,590 exoplanets with usable orbits, 5 dwarf
+planets, companion data for 324 multi-star systems, and 8,870 stars, then
+groups everything into 2,472 star systems.*
 
 ## CI and releases
 

@@ -51,6 +51,9 @@ were no release tags at the time). The README describes only the
   finds vcpkg itself (`VCPKG_ROOT`, then `VCPKG_INSTALLATION_ROOT`, then
   `C:/vcpkg`), and a default `windows-dev` preset (Debug/Release) was
   added for everyday IDE use.
+- Mercury and Venus were shown with illustrative "candidate" moons, which
+  are meant only for exoplanets. Sol's bodies now never get invented moons,
+  and the moon count reads "1 moon" rather than "1 moons".
 
 ## 0.5.0: Real sky, mission planner, rendering accuracy
 - **Mission Planner** (Sol): Hohmann transfers, launch-window search,

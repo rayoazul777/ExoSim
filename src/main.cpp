@@ -504,8 +504,14 @@ int main(int argc, char** argv) {
     // so they behave like stable, inspectable data for the rest of the
     // session instead of being silently regenerated each time.
     std::unordered_map<size_t, std::vector<MoonRecord>> speculativeMoonCache;
+    static const std::vector<MoonRecord> kNoMoons;
     auto getMoonsForPlanet = [&](size_t pIdx) -> const std::vector<MoonRecord>& {
         if (!planets[pIdx].moons.empty()) return planets[pIdx].moons;
+        // Never invent moons in our own Solar System: Sol's moons are known,
+        // so a Sol body with no listed moons gets none (Mercury and Venus
+        // really have none). Illustrative candidates are only for
+        // exoplanets, where moons are genuinely unknown.
+        if (planets[pIdx].hostStar == "Sun") return kNoMoons;
         auto it = speculativeMoonCache.find(pIdx);
         if (it != speculativeMoonCache.end()) return it->second;
         float seed = 0.0f;
@@ -1022,8 +1028,9 @@ int main(int argc, char** argv) {
                 std::string rowLabel = planets[pIdx].name;
                 if (!moonsForRow.empty()) {
                     bool rowMoonsReal = !planets[pIdx].moons.empty();
-                    rowLabel += " (" + std::to_string(moonsForRow.size())
-                              + (rowMoonsReal ? " moons)" : " candidate moons)");
+                    size_t n = moonsForRow.size();
+                    rowLabel += " (" + std::to_string(n) + (rowMoonsReal ? " moon" : " candidate moon")
+                              + (n == 1 ? ")" : "s)");
                 }
                 if (ImGui::Selectable(rowLabel.c_str(), selectedPlanetLocal == local)) {
                     selectedPlanetLocal = local;
@@ -1249,7 +1256,12 @@ int main(int argc, char** argv) {
 
             ImGui::Separator();
             if (detailMoons.empty()) {
-                ImGui::TextDisabled("No moons shown for this planet.");
+                if (p.name == "Mercury" || p.name == "Venus" || p.name == "Ceres")
+                    ImGui::TextDisabled("%s has no moons.", p.name.c_str());
+                else if (p.hostStar == "Sun")
+                    ImGui::TextDisabled("%s's real moons aren't modeled yet.", p.name.c_str());
+                else
+                    ImGui::TextDisabled("No moons shown for this planet.");
             } else if (detailMoonsAreReal) {
                 ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Moons (real, approximate known orbits):");
                 for (int mi = 0; mi < static_cast<int>(detailMoons.size()); ++mi) {
