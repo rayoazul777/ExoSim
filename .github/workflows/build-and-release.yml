@@ -1,0 +1,174 @@
+# Build, validate, package and (on version tags) release ExoSim.
+#
+#   push to main / pull request  -> validate + build a downloadable package (artifact)
+#   push a tag like v0.6.0       -> the same, then publish a GitHub Release with the zip
+#   manual run (Actions tab)     -> same as a push to main
+#
+# To release:  bump VERSION in CMakeLists.txt, add a "## x.y.z" section to
+# CHANGELOG.md, commit, then:  git tag v0.6.0 && git push origin v0.6.0
+
+name: Build, test & release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-validation:
+    name: Linux - tests, sanitizers, shaders
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ libglm-dev nlohmann-json3-dev glslang-tools
+
+      - name: Validation suite
+        run: |
+          cmake --preset linux-tests
+          cmake --build --preset linux-tests -j
+          ctest --preset linux-tests
+
+      - name: Validation suite under ASan + UBSan
+        run: |
+          cmake --preset linux-sanitize
+          cmake --build --preset linux-sanitize -j
+          ctest --preset linux-sanitize
+
+      - name: Validate GLSL shaders (Khronos reference compiler)
+        run: python3 tools/validate_shaders.py
+
+  windows-package:
+    name: Windows - portable build & package
+    needs: linux-validation
+    # Pinned: the windows-portable preset uses the "Visual Studio 17 2022"
+    # generator. Update both together when moving to a newer image.
+    runs-on: windows-2022
+    timeout-minutes: 90 # the first run builds all vcpkg deps statically; later runs hit the cache
+    permissions:
+      contents: write # needed only to publish the release on tags
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}\\vcpkg-cache,readwrite"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(ExoSim VERSION ([0-9.]+)'
+          $ver = $m.Matches[0].Groups[1].Value
+          if ("v$ver" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match CMakeLists.txt version v$ver"
+          }
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-x64-windows-static-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-x64-windows-static-
+
+      - name: Prepare vcpkg
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch real catalog data snapshot
+        working-directory: data
+        run: |
+          python -m pip install --quiet certifi
+          python fetch_exoplanets.py
+          if ($LASTEXITCODE -ne 0) { throw "Data fetch failed (exit $LASTEXITCODE)" }
+          $stamp = Get-Date -AsUTC -Format "yyyy-MM-dd HH:mm"
+          "Fetched $stamp UTC for build ${{ github.ref_name }} (${{ github.sha }})" |
+            Out-File -Encoding utf8 FETCHED_AT.txt
+
+      - name: Configure
+        run: cmake --preset windows-portable
+
+      - name: Build
+        run: cmake --build --preset windows-portable
+
+      - name: Test (validation suite + in-tree self-test)
+        run: ctest --preset windows-portable
+
+      - name: Package
+        working-directory: build/windows-portable
+        run: cpack -C Release
+
+      - name: Set up MSVC tools (for dumpbin)
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Smoke-test the packaged zip
+        run: |
+          $zip = Get-ChildItem build/windows-portable/ExoSim-*-win64.zip | Select-Object -First 1
+          if (-not $zip) { throw "No package zip was produced" }
+          $dest = Join-Path $env:RUNNER_TEMP "pkg"
+          Expand-Archive $zip.FullName -DestinationPath $dest -Force
+          $exe = Get-ChildItem $dest -Recurse -Filter ExoSim.exe | Select-Object -First 1
+          if (-not (Get-ChildItem $dest -Recurse -Filter LICENSE)) { throw "LICENSE missing from package" }
+
+          # Must depend only on Windows system DLLs: no C++ runtime or
+          # third-party DLLs, so it runs on a clean machine.
+          $deps = dumpbin /dependents $exe.FullName | Out-String
+          Write-Host $deps
+          if ($deps -match '(?i)(vcruntime|msvcp|glfw|imgui|libcurl|zlib|glad)[^\s]*\.dll') {
+            throw "ExoSim.exe depends on a non-system DLL: $($Matches[0])"
+          }
+
+          # Run from a DIFFERENT directory to prove exe-relative asset loading.
+          Push-Location $env:RUNNER_TEMP
+          & $exe.FullName --version
+          & $exe.FullName --selftest
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { throw "Packaged self-test failed (exit $code)" }
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExoSim-win64-${{ github.sha }}
+          path: build/windows-portable/ExoSim-*-win64.zip
+          if-no-files-found: error
+
+      - name: Extract release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($ver))\b.*?(?=^## |\z)")
+          if (-not $m.Success) { throw "CHANGELOG.md has no '## $ver' section" }
+          $notes = $m.Value.Trim() + "`n`n### Running it`n" +
+            "Download the zip below, extract the whole folder, and double-click ExoSim.exe " +
+            "(Windows 10/11 x64, OpenGL 3.3). Unsigned build: on the SmartScreen prompt choose " +
+            "*More info* then *Run anyway*. ``ExoSim.exe --selftest`` checks the install. " +
+            "See README.txt inside the zip."
+          $notes | Out-File -Encoding utf8 release-notes.md
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/windows-portable/ExoSim-*-win64.zip
+          body_path: release-notes.md
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}

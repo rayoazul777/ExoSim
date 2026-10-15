@@ -1,0 +1,246 @@
+Detecting compiler hash for triplet x64-windows...
+Compiler found: C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+Detecting compiler hash for triplet x64-windows-static...
+Compiler found: C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+The following packages will be built and installed:
+    curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1
+  * egl-registry:x64-windows-static@2025-05-27
+    glad[core,loader]:x64-windows-static@0.1.36
+    glfw3:x64-windows-static@3.5.1
+    glm:x64-windows-static@1.0.3
+    imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9
+    nlohmann-json:x64-windows-static@3.12.0#2
+  * opengl-registry:x64-windows-static@2026-08-03
+  * vcpkg-cmake:x64-windows@2025-08-07
+  * vcpkg-cmake-config:x64-windows@2026-07-21
+  * zlib:x64-windows-static@1.3.2#2
+Additional packages (*) will be modified to complete this operation.
+Restored 2 package(s) from C:\Users\jemif\AppData\Local\vcpkg\archives in 43.9 ms. Use --debug to see more details.
+Installing 1/11 vcpkg-cmake-config:x64-windows@2026-07-21...
+vcpkg-cmake-config:x64-windows@2026-07-21 package ABI: 6cb40187efa7b54575df466e90d8ed46665447ddb3d38aa91d6bd75e71a79d8e
+Elapsed time to handle vcpkg-cmake-config:x64-windows: 52.1 ms
+Installing 2/11 vcpkg-cmake:x64-windows@2025-08-07...
+vcpkg-cmake:x64-windows@2025-08-07 package ABI: 1bcd9f76092a105952aedd7f65909275f6a79aa87d1f5ddf2286ab91a109f8bd
+Elapsed time to handle vcpkg-cmake:x64-windows: 105 ms
+Installing 3/11 zlib:x64-windows-static@1.3.2#2...
+zlib:x64-windows-static@1.3.2#2 package ABI: f16f6fcb285fdda6c2f4d1d28e08b079cbc2bf59dc52fadb3ec853d212d2b538
+Building zlib:x64-windows-static@1.3.2#2...
+-- Using cached madler-zlib-v1.3.2.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/zlib/src/v1.3.2-c19a0bfd23.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/madler-zlib-v1.3.2.tar.gz
+-- Applying patch 0001-no-version-script-on-ohos.patch
+-- Using source at C:/vcpkg/buildtrees/zlib/src/v1.3.2-c19a0bfd23.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/zlib_x64-windows-static/lib/pkgconfig/zlib.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/zlib_x64-windows-static/debug/lib/pkgconfig/zlib.pc
+-- Installing: C:/vcpkg/packages/zlib_x64-windows-static/share/zlib/vcpkg-cmake-wrapper.cmake
+-- Installing: C:/vcpkg/packages/zlib_x64-windows-static/share/zlib/copyright
+-- Performing post-build validation
+Starting submission of zlib:x64-windows-static@1.3.2#2 to 1 binary cache(s) in the background
+Elapsed time to handle zlib:x64-windows-static: 4.4 s
+Installing 4/11 curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1...
+curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1 package ABI: 97a5f99036595e8fc509c2775fa60a10e77f474be12ea1acf21927991f90ade0
+Building curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1...
+-- Using cached curl-curl-curl-8_22_0.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/curl/src/url-8_22_0-48214b4564.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/curl-curl-curl-8_22_0.tar.gz
+-- Applying patch dependencies.patch
+-- Using source at C:/vcpkg/buildtrees/curl/src/url-8_22_0-48214b4564.clean
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/curl_x64-windows-static/lib/pkgconfig/libcurl.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/curl_x64-windows-static/debug/lib/pkgconfig/libcurl.pc
+-- Installing: C:/vcpkg/packages/curl_x64-windows-static/share/curl/vcpkg-cmake-wrapper.cmake
+-- Installing: C:/vcpkg/packages/curl_x64-windows-static/share/curl/usage
+-- Performing post-build validation
+Starting submission of curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1 to 1 binary cache(s) in the background
+Elapsed time to handle curl:x64-windows-static: 12 s
+Completed submission of zlib:x64-windows-static@1.3.2#2 to 1 binary cache(s) in 63.6 ms
+Installing 5/11 egl-registry:x64-windows-static@2025-05-27...
+egl-registry:x64-windows-static@2025-05-27 package ABI: da2516c8cb79f6c0a3fd9c976d9054ac7d6249949d1d5f94624ce938e225c7ae
+Building egl-registry:x64-windows-static@2025-05-27...
+-- Using cached KhronosGroup-EGL-Registry-3ae2b7c48690d2ce13cc6db3db02dfc0572be65e.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/egl-registry/src/c0572be65e-4257a9ad9b.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/KhronosGroup-EGL-Registry-3ae2b7c48690d2ce13cc6db3db02dfc0572be65e.tar.gz
+-- Using source at C:/vcpkg/buildtrees/egl-registry/src/c0572be65e-4257a9ad9b.clean
+-- Installing: C:/vcpkg/packages/egl-registry_x64-windows-static/share/egl-registry/copyright
+-- Performing post-build validation
+Starting submission of egl-registry:x64-windows-static@2025-05-27 to 1 binary cache(s) in the background
+Elapsed time to handle egl-registry:x64-windows-static: 493 ms
+Installing 6/11 opengl-registry:x64-windows-static@2026-08-03...
+opengl-registry:x64-windows-static@2026-08-03 package ABI: 42435c389a6040a6cf239394c6f731a7f52ee55f081aceb8078f40557226c470
+Building opengl-registry:x64-windows-static@2026-08-03...
+-- Using cached KhronosGroup-OpenGL-Registry-e8f7cd0e35ac8d6f5667a021ff83d04b1fec41ef.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/opengl-registry/src/4b1fec41ef-a126ad0aa2.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/KhronosGroup-OpenGL-Registry-e8f7cd0e35ac8d6f5667a021ff83d04b1fec41ef.tar.gz
+-- Using source at C:/vcpkg/buildtrees/opengl-registry/src/4b1fec41ef-a126ad0aa2.clean
+-- Installing: C:/vcpkg/packages/opengl-registry_x64-windows-static/share/opengl-registry/copyright
+-- Performing post-build validation
+Starting submission of opengl-registry:x64-windows-static@2026-08-03 to 1 binary cache(s) in the background
+Elapsed time to handle opengl-registry:x64-windows-static: 1.8 s
+Completed submission of curl[core,non-http,ssl,sspi]:x64-windows-static@8.22.0#1 to 1 binary cache(s) in 950 ms
+Completed submission of egl-registry:x64-windows-static@2025-05-27 to 1 binary cache(s) in 42 ms
+Installing 7/11 glad[core,loader]:x64-windows-static@0.1.36...
+glad[core,loader]:x64-windows-static@0.1.36 package ABI: 0dcee203f807d8d0b32e06a81fbdcc1d399299a86ce980e9ec2713dfabc88962
+Building glad[core,loader]:x64-windows-static@0.1.36...
+-- Using cached Dav1dde-glad-1ecd45775d96f35170458e6b148eb0708967e402.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/glad/src/708967e402-274d415499.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/Dav1dde-glad-1ecd45775d96f35170458e6b148eb0708967e402.tar.gz
+-- Applying patch encoding.patch
+-- Applying patch find_python.patch
+-- Using source at C:/vcpkg/buildtrees/glad/src/708967e402-274d415499.clean
+-- This version of glad uses the compatibility profile. To use the core profile instead, create an overlay port of this with GLAD_PROFILE set to 'core' or set GLAD_PROFILE to 'core' in a custom triplet.
+-- This recipe is at C:/vcpkg/ports/glad
+-- See the overlay ports documentation at https://github.com/microsoft/vcpkg/blob/master/docs/specifications/ports-overlay.md
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/vcpkg/packages/glad_x64-windows-static/share/glad/copyright
+-- Performing post-build validation
+Starting submission of glad[core,loader]:x64-windows-static@0.1.36 to 1 binary cache(s) in the background
+Elapsed time to handle glad:x64-windows-static: 2.8 s
+Completed submission of opengl-registry:x64-windows-static@2026-08-03 to 1 binary cache(s) in 165 ms
+Installing 8/11 glfw3:x64-windows-static@3.5.1...
+glfw3:x64-windows-static@3.5.1 package ABI: 3fe41ef85d9686b19592f75c1e64113e1bdebc537acb55cfa74dc59e507dea28
+Building glfw3:x64-windows-static@3.5.1...
+-- Using cached glfw-glfw-3.5.1.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/glfw3/src/3.5.1-1256661d11.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/glfw-glfw-3.5.1.tar.gz
+-- Using source at C:/vcpkg/buildtrees/glfw3/src/3.5.1-1256661d11.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/glfw3_x64-windows-static/lib/pkgconfig/glfw3.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/glfw3_x64-windows-static/debug/lib/pkgconfig/glfw3.pc
+-- Installing: C:/vcpkg/packages/glfw3_x64-windows-static/share/glfw3/copyright
+-- Performing post-build validation
+Starting submission of glfw3:x64-windows-static@3.5.1 to 1 binary cache(s) in the background
+Elapsed time to handle glfw3:x64-windows-static: 3 s
+Completed submission of glad[core,loader]:x64-windows-static@0.1.36 to 1 binary cache(s) in 122 ms
+Installing 9/11 glm:x64-windows-static@1.0.3...
+glm:x64-windows-static@1.0.3 package ABI: b7044dc5f50f77c3f9022b82e3a1db92f2f41c229adcf6b093c19c30a8a0ad2f
+Building glm:x64-windows-static@1.0.3...
+-- Using cached g-truc-glm-1.0.3.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/glm/src/1.0.3-65552ff9f1.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/g-truc-glm-1.0.3.tar.gz
+-- Using source at C:/vcpkg/buildtrees/glm/src/1.0.3-65552ff9f1.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/vcpkg/packages/glm_x64-windows-static/share/glm/copyright
+-- Installing: C:/vcpkg/packages/glm_x64-windows-static/share/glm/usage
+-- Performing post-build validation
+Starting submission of glm:x64-windows-static@1.0.3 to 1 binary cache(s) in the background
+Elapsed time to handle glm:x64-windows-static: 5.7 s
+Completed submission of glfw3:x64-windows-static@3.5.1 to 1 binary cache(s) in 205 ms
+Installing 10/11 imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9...
+imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9 package ABI: 7ba493ac558537107d57c32c629b90cc66e5e23f1295dfcaa6304cc3e4de44c2
+Building imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9...
+-- Using cached ocornut-imgui-v1.92.9b.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/imgui/src/v1.92.9b-6eb65f6775.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/ocornut-imgui-v1.92.9b.tar.gz
+-- Using source at C:/vcpkg/buildtrees/imgui/src/v1.92.9b-6eb65f6775.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/vcpkg/packages/imgui_x64-windows-static/share/imgui/copyright
+-- Performing post-build validation
+Starting submission of imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9 to 1 binary cache(s) in the background
+Elapsed time to handle imgui:x64-windows-static: 4.6 s
+Completed submission of glm:x64-windows-static@1.0.3 to 1 binary cache(s) in 256 ms
+Installing 11/11 nlohmann-json:x64-windows-static@3.12.0#2...
+nlohmann-json:x64-windows-static@3.12.0#2 package ABI: a16be1b5a9ab6eee71814aa0b3d241291d3fd10691c195e7126ab11f255562c1
+Building nlohmann-json:x64-windows-static@3.12.0#2...
+-- Using cached nlohmann-json-v3.12.0.tar.gz
+-- Cleaning sources at C:/vcpkg/buildtrees/nlohmann-json/src/v3.12.0-89fed620e6.clean. Use --editable to skip cleaning for the packages you specify.
+-- Extracting source C:/vcpkg/downloads/nlohmann-json-v3.12.0.tar.gz
+-- Applying patch fix-4736_char8_t.patch
+-- Applying patch fix-4742_std_optional.patch
+-- Using source at C:/vcpkg/buildtrees/nlohmann-json/src/v3.12.0-89fed620e6.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/nlohmann-json_x64-windows-static/share/pkgconfig/nlohmann_json.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/nlohmann-json_x64-windows-static/debug/share/pkgconfig/nlohmann_json.pc
+-- Installing: C:/vcpkg/packages/nlohmann-json_x64-windows-static/share/nlohmann-json/copyright
+-- Performing post-build validation
+Starting submission of nlohmann-json:x64-windows-static@3.12.0#2 to 1 binary cache(s) in the background
+Elapsed time to handle nlohmann-json:x64-windows-static: 2.3 s
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Some packages did not declare an SPDX license. Check the `copyright` file for each package for more information about their licensing.
+Packages installed in this vcpkg installation declare the following licenses:
+Apache-2.0
+BSD-3-Clause
+ISC
+MIT
+Zlib
+curl
+curl is compatible with built-in CMake targets:
+
+    find_package(CURL REQUIRED)
+    target_link_libraries(main PRIVATE CURL::libcurl)
+
+glad provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(glad CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE glad::glad)
+
+glfw3 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(glfw3 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE glfw)
+
+glfw3 provides pkg-config modules:
+
+  # A multi-platform library for OpenGL, window and input
+  glfw3
+
+The package glm provides CMake targets:
+
+    find_package(glm CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE glm::glm)
+
+    # Or use the header-only version
+    find_package(glm CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE glm::glm-header-only)
+
+imgui provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(imgui CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE imgui::imgui)
+
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+    
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+Completed submission of imgui[core,glfw-binding,opengl3-binding]:x64-windows-static@1.92.9 to 1 binary cache(s) in 674 ms
+Waiting for 1 remaining binary cache submissions...
+Completed submission of nlohmann-json:x64-windows-static@3.12.0#2 to 1 binary cache(s) in 53.9 ms (1/1)
+All requested installations completed successfully in: 38 s

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\ExoSim\build-release\CMakeFiles\41c636a477df9ecb53c9a7abbb059085\RUN_TESTS_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{07EE412A-9F0D-30A9-90BA-83538FAC9A1B}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

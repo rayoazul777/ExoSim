@@ -94,7 +94,8 @@ All dependencies are installed through vcpkg (`vcpkg.json`).
 
 ## Project license
 
-**ExoSim does not have a license yet.** Without one, others have no
-legal right to reuse the code, even if the repository is public. Choose
-one (for example MIT or Apache-2.0) and add a `LICENSE` file before
-publishing.
+ExoSim's own source code is released under the **MIT License** (see
+`LICENSE` in the repository root). The license covers the code only. Data
+retrieved from the services above, including any snapshot bundled in a
+release zip, stays under its providers' terms and acknowledgment
+requirements listed on this page.

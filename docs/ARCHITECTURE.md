@@ -136,15 +136,16 @@ dataset sizes. Rendering frame rate has not been measured here (no GPU).
 | Operation | Size | Time |
 |---|---|---|
 | Load planets | 6,366 rows | ~73 ms |
-| Group into systems | 3,183 systems | ~26 ms |
+| Group into systems | 3,183 systems | ~8.5 ms |
 | Load star catalog | 9,000 stars | ~32 ms |
 | Load + cross-match WDS | 150,000 pairs | 345–430 ms |
 | One launch-window search | — | ~0.4 ms |
 | Added peak memory | all of the above | ~61 MB |
 
-Two known scaling costs:
-- `GroupByHost` uses a linear search per row, so it is O(n × systems).
-  It's fine at today's sizes; a hash map would make it O(n).
+Scaling notes:
+- `GroupByHost` uses a hash map from host name to system (O(n)). It
+  replaced a linear scan per row (O(n × systems)) in 0.6.0; at today's size
+  that cut the time from ~26 ms to ~8.5 ms.
 - WDS loading is dominated by JSON parsing. The cross-match itself uses a
   declination-sorted binary search.
 

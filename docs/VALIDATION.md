@@ -164,6 +164,13 @@ only been compile-checked:
   collided with a GLSL built-in and would have failed at runtime on every
   GPU.
 
+- **Packaging:** the configure → build → install → CPack → extract →
+  `--selftest` chain was run end-to-end with real CMake on Linux. Because
+  Ubuntu provides no CMake packages for ImGui and glad, stand-in package
+  configs were used for those two only. The workflow's pass/fail logic
+  (release-notes extraction, tag/version check, DLL detector) was tested
+  against realistic inputs.
+
 ## What is NOT validated
 
 Stated plainly, so nothing here is over-read:
@@ -185,4 +192,5 @@ Stated plainly, so nothing here is over-read:
 - **Mission planner accuracy vs. real missions** is only a plausibility
   check (MIS-7): Hohmann transfers are an idealization (see
   `docs/ARCHITECTURE.md` → Assumptions).
-- **The MSVC/Windows test run** has not been done yet.
+- **The MSVC/Windows test run** and the Windows CI job have not run yet.
+  Their first run happens on the first push to GitHub.

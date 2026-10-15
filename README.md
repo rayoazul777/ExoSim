@@ -2,7 +2,7 @@
 
 **A C++ orbital simulation and visualization system.** It ingests real astronomical catalogs, propagates orbits, and computes mission-transfer opportunities, and it keeps validated physical data clearly separate from assumptions and visualization choices.
 
-Version 0.6.0 · C++20 · OpenGL 3.3 · [Changelog](CHANGELOG.md)
+Version 0.6.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CHANGELOG.md)
 
 <!-- Screenshots and demo video: see "Demo" below. -->
 
@@ -52,9 +52,23 @@ Full table, methods, tolerances, and what is **not** yet validated:
 
 | Platform | Status |
 |---|---|
-| Windows 10/11, Visual Studio 2022, vcpkg | Primary. Builds and runs. |
+| Windows 10/11, Visual Studio 2022, vcpkg | Primary. Builds and runs; portable zip built by CI. |
 | Linux (GCC 13) | Compiles, links, and passes the test suite and sanitizers; rendering not exercised |
 | macOS | Untested; likely needs the GLFW forward-compatible core-profile hint |
+
+## Download and run (no build needed)
+
+Each tagged release on GitHub has a portable Windows zip:
+`ExoSim-<version>-win64.zip` under **Releases**.
+
+1. Extract the whole folder and double-click `ExoSim.exe`. There is
+   nothing to install: libraries and the C++ runtime are linked in, and
+   the zip ships a real data snapshot.
+2. The build is unsigned, so Windows SmartScreen will warn. Choose
+   *More info → Run anyway*.
+3. `ExoSim.exe --selftest` checks the install without opening a window.
+
+Requirements: Windows 10/11 x64 with OpenGL 3.3.
 
 ## Build and run (Windows)
 
@@ -78,6 +92,16 @@ Full table, methods, tolerances, and what is **not** yet validated:
    press F5.
 4. **Test:** build `ExoSimTests`, then run `ctest --output-on-failure`.
 
+**Portable package locally** (same settings CI uses). Set `VCPKG_ROOT`
+(e.g. `C:\vcpkg`), then in a Developer PowerShell for VS 2022:
+```powershell
+cmake --preset windows-portable
+cmake --build --preset windows-portable
+ctest --preset windows-portable
+cd build\windows-portable; cpack -C Release   # -> ExoSim-0.6.0-win64.zip
+```
+The first configure builds every dependency statically, so it's slow once.
+
 If a data file is missing, only the feature it feeds is disabled. The
 console states which one.
 
@@ -98,6 +122,28 @@ sequence:
 4. Open Sol and plan a Mars mission, showing the launch window, Δv and duration.
 5. End on a terminal running `ctest` and the data fetch.
 
+## CI and releases
+
+`.github/workflows/build-and-release.yml` runs on every push and pull request:
+
+1. **Linux:** the validation suite, the same suite under ASan + UBSan, and
+   GLSL validation of every shader.
+2. **Windows** (only if Linux passes):
+   - builds the portable exe and runs the tests;
+   - packages the zip (including `LICENSE`);
+   - fails if the exe depends on any non-system DLL;
+   - extracts the zip and runs `--selftest` from a different directory;
+   - uploads the zip as a build artifact.
+
+**To cut a release:**
+1. Set `VERSION` in `CMakeLists.txt`.
+2. Add a matching `## x.y.z` section to `CHANGELOG.md`.
+3. Commit, then run `git tag vX.Y.Z` and `git push origin vX.Y.Z`.
+
+The workflow refuses a tag that doesn't match the CMake version. It then
+publishes a GitHub Release with the zip, taking the release notes from
+that CHANGELOG section. `0.x` versions are marked as pre-releases.
+
 ## Known limitations
 
 - **Two-body motion** only, with Standish elements held fixed. Accuracy is excellent near 2024–2026 but unmeasured for distant eras.
@@ -113,7 +159,7 @@ Priorities favor mission-analysis depth and engineering rigor over more visuals.
 1. **Lambert solver and porkchop plots.** Arbitrary-date transfers, and launch/arrival Δv contour maps.
 2. **JPL Horizons validation.** Position error envelopes over 1950–2050.
 3. **Deterministic fixed-step clock with recorded-input replay**, plus a refactor of `main.cpp` into testable state and UI units (see [Architecture → Coupling](docs/ARCHITECTURE.md#coupling-and-what-id-refactor-first)).
-4. **CI** (GitHub Actions: Windows/MSVC and Linux/GCC, sanitizers, clang-tidy, clang-format), plus a configuration file and structured logging.
+4. **Static analysis in CI** (clang-tidy, clang-format checks), plus a configuration file and structured logging.
 5. **Gravity-assist chains** with sphere-of-influence transitions.
 
 ## Documentation
@@ -136,4 +182,9 @@ tool, CDS, Strasbourg, France. The Hipparcos catalogue is © ESA (1997),
 and the Washington Double Star Catalog is maintained by the US Naval
 Observatory. Full citations are in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
 
-**License:** not yet chosen. See [DATA_SOURCES.md → Project license](docs/DATA_SOURCES.md#project-license).
+## License
+
+ExoSim's source code is released under the [MIT License](LICENSE).
+Catalog data fetched or bundled from NASA, JPL, CDS/VizieR and others is
+**not** covered by that license; it remains under each provider's terms
+(see [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)).
