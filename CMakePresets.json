@@ -3,13 +3,22 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
   "configurePresets": [
     {
+      "name": "windows-dev",
+      "displayName": "Windows dev (Debug/Release, for Visual Studio)",
+      "description": "Everyday development build. Dynamic vcpkg libraries (DLLs are copied next to the exe automatically). vcpkg is found automatically - see CMakeLists.txt.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-dev",
+      "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
       "name": "windows-portable",
       "displayName": "Windows portable release (static, no DLLs)",
-      "description": "Static vcpkg triplet + static MSVC runtime: the exe runs on a clean Windows machine. Requires the VCPKG_ROOT environment variable.",
+      "description": "Static vcpkg triplet + static MSVC runtime: the exe runs on a clean Windows machine. Used by CI to build the release zip. First configure is slow (builds every dependency statically).",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-portable",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -32,11 +41,14 @@
     }
   ],
   "buildPresets": [
+    { "name": "windows-dev-debug", "displayName": "Debug", "configurePreset": "windows-dev", "configuration": "Debug" },
+    { "name": "windows-dev-release", "displayName": "Release", "configurePreset": "windows-dev", "configuration": "Release" },
     { "name": "windows-portable", "configurePreset": "windows-portable", "configuration": "Release" },
     { "name": "linux-tests", "configurePreset": "linux-tests" },
     { "name": "linux-sanitize", "configurePreset": "linux-sanitize" }
   ],
   "testPresets": [
+    { "name": "windows-dev", "configurePreset": "windows-dev", "configuration": "Debug", "output": { "outputOnFailure": true } },
     { "name": "windows-portable", "configurePreset": "windows-portable", "configuration": "Release", "output": { "outputOnFailure": true } },
     { "name": "linux-tests", "configurePreset": "linux-tests", "output": { "outputOnFailure": true } },
     { "name": "linux-sanitize", "configurePreset": "linux-sanitize", "output": { "outputOnFailure": true } }

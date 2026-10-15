@@ -1,6 +1,0 @@
-C:/ExoSim/build-release/CMakeFiles/ExoSim.dir
-C:/ExoSim/build-release/CMakeFiles/FetchData.dir
-C:/ExoSim/build-release/CMakeFiles/ExoSimTests.dir
-C:/ExoSim/build-release/CMakeFiles/RUN_TESTS.dir
-C:/ExoSim/build-release/CMakeFiles/ALL_BUILD.dir
-C:/ExoSim/build-release/CMakeFiles/ZERO_CHECK.dir

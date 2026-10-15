@@ -1,9 +1,0 @@
-C:\ExoSim\src\main.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\main.obj
-C:\ExoSim\src\KeplerOrbit.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\KeplerOrbit.obj
-C:\ExoSim\src\Dataset.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\Dataset.obj
-C:\ExoSim\src\Renderer.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\Renderer.obj
-C:\ExoSim\src\CrtPostProcess.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\CrtPostProcess.obj
-C:\ExoSim\src\PlanetClassifier.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\PlanetClassifier.obj
-C:\ExoSim\src\StarClassifier.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\StarClassifier.obj
-C:\ExoSim\src\SolarSystemAppearance.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\SolarSystemAppearance.obj
-C:\ExoSim\src\MissionPlanner.cpp;C:\ExoSim\build-release\ExoSim.dir\Release\MissionPlanner.obj
