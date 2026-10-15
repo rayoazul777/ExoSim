@@ -28,9 +28,6 @@
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
-#include <filesystem>
-#include <cstring>
-#include <cstdio>
 
 #include "Dataset.h"
 #include "KeplerOrbit.h"
@@ -40,7 +37,6 @@
 #include "StarClassifier.h"
 #include "SolarSystemAppearance.h"
 #include "MissionPlanner.h"
-#include "Platform.h"
 
 namespace {
     int g_width = 1280, g_height = 800;
@@ -263,72 +259,7 @@ namespace {
     }
 }
 
-#ifndef EXOSIM_VERSION
-#define EXOSIM_VERSION "dev"
-#endif
-
-namespace {
-    // Headless check that a packaged build is complete and loads correctly.
-    // Runs before any window or GL context exists, so it works on CI
-    // machines with no GPU (the release workflow runs it on every package,
-    // from a different working directory, to prove path resolution too).
-    int RunSelfTest() {
-        int failures = 0;
-        auto report = [&](bool ok, bool required, const std::string& what) {
-            std::printf("[%s] %s\n", ok ? "OK  " : (required ? "FAIL" : "INFO"), what.c_str());
-            if (!ok && required) ++failures;
-        };
-        std::printf("ExoSim %s self-test\nWorking directory: %s\n", EXOSIM_VERSION,
-                    std::filesystem::current_path().string().c_str());
-
-        report(std::filesystem::exists("shaders/crt.frag"), true, "shaders/crt.frag present");
-
-        std::vector<PlanetRecord> planets;
-        bool loaded = Dataset::LoadFromFile("data/exoplanets.json", planets) && !planets.empty();
-        report(loaded, true, "data/exoplanets.json loads: " + std::to_string(planets.size()) + " drawable planets");
-
-        std::vector<PlanetRecord> dwarfs;
-        Dataset::LoadDwarfPlanets("data/dwarf_planets.json", dwarfs);
-        report(!dwarfs.empty(), false, "data/dwarf_planets.json: " + std::to_string(dwarfs.size()) + " dwarf planets");
-        auto stars = Dataset::LoadStarCatalog("data/star_catalog.json");
-        report(!stars.empty(), false, "data/star_catalog.json: " + std::to_string(stars.size()) + " stars");
-        report(std::filesystem::exists("data/stellar_hosts.json"), false, "data/stellar_hosts.json present");
-        report(std::filesystem::exists("data/double_stars.json"), false, "data/double_stars.json present");
-
-        // End-to-end core check: plan the Mars mission from Sol's built-in data.
-        auto sol = Dataset::DemoSolarSystem();
-        const OrbitalElements* earth = nullptr; const OrbitalElements* mars = nullptr;
-        for (const auto& p : sol) {
-            if (p.name == "Earth") earth = &p.elements;
-            if (p.name == "Mars") mars = &p.elements;
-        }
-        MissionPlan plan = (earth && mars) ? MissionPlanner::PlanHohmann(*earth, *mars, MissionPlanner::NowDaysSinceJ2000(), "Mars")
-                                           : MissionPlan{};
-        report(plan.valid, true, plan.valid ? "Mission planner: next Mars window " + MissionPlanner::DayToCalendar(plan.launchDay)
-                                            : std::string("Mission planner: no Mars window found"));
-
-        std::printf("Self-test %s\n", failures ? "FAILED" : "PASSED");
-        return failures ? 1 : 0;
-    }
-}
-
-int main(int argc, char** argv) {
-    // Load assets relative to the exe, not the launch directory.
-    std::filesystem::path exeDir = ExecutableDirectory();
-    if (!exeDir.empty()) {
-        std::error_code ec;
-        std::filesystem::current_path(exeDir, ec);
-    }
-
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--version") == 0) { std::printf("ExoSim %s\n", EXOSIM_VERSION); return 0; }
-        if (std::strcmp(argv[i], "--selftest") == 0) return RunSelfTest();
-        if (std::strcmp(argv[i], "--help") == 0) {
-            std::printf("ExoSim %s\n  --version   print version and exit\n  --selftest  verify the install without opening a window\n", EXOSIM_VERSION);
-            return 0;
-        }
-    }
-
+int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to init GLFW\n";
         return -1;

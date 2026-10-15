@@ -46,8 +46,7 @@ marked, not omitted.
 | ENG-2 | No memory errors or undefined behavior in the core | T: suite under ASan + UBSan | Met (GCC) |
 | ENG-3 | All shaders compile under the GLSL reference compiler | T: `glslangValidator` | Met (13/13) |
 | ENG-4 | Deterministic, replayable simulation | — | **Not met**: the clock advances by wall-clock time |
-| ENG-5 | Continuous integration on Windows and Linux | I: workflow file | Implemented. Linted (actionlint) and its pass/fail logic tested locally; **not yet run on GitHub** |
-| ENG-8 | A downloadable build runs on a clean Windows machine with no installs | T: CI dependency check + packaged `--selftest` | Implemented; verified end-to-end on Linux, Windows CI pending first run |
+| ENG-5 | Continuous integration on Windows and Linux | — | **Not met** (roadmap) |
 | ENG-6 | Runtime configuration from a file rather than constants | — | **Not met** (roadmap) |
 | ENG-7 | Structured logging | — | **Not met**: plain console output today |
 

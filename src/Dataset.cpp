@@ -205,19 +205,17 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
 std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& planets) {
     std::vector<StarSystem> systems;
 
-    // Preserve first-seen order while grouping (the sort below reorders by
-    // planet count; std::sort isn't stable, so ties may reorder).
-    std::unordered_map<std::string, size_t> indexByHost;
+    // Preserve first-seen order while grouping, using a simple linear
+    // lookup into `systems` by name (fine at this data scale - a few
+    // thousand rows, not tens of millions).
     for (size_t i = 0; i < planets.size(); ++i) {
         const std::string& host = planets[i].hostStar;
-        // Hash lookup (host name -> index into `systems`) instead of a linear
-        // scan per row: O(n) overall rather than O(n x systems).
-        auto found = indexByHost.find(host);
-        if (found == indexByHost.end()) {
-            indexByHost.emplace(host, systems.size());
+        auto it = std::find_if(systems.begin(), systems.end(),
+            [&host](const StarSystem& s) { return s.hostName == host; });
+        if (it == systems.end()) {
             StarSystem sys;
             sys.hostName = host;
-            sys.planetIndices.push_back(i);
+            sys.planetIndices = {i};
             sys.starTeffK = planets[i].starTeffK;
             sys.starRadiusSolar = planets[i].starRadiusSolar;
             sys.starMassSolar = planets[i].starMassSolar;
@@ -230,7 +228,7 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
             sys.distPc = planets[i].distPc;
             systems.push_back(std::move(sys));
         } else {
-            systems[found->second].planetIndices.push_back(i);
+            it->planetIndices.push_back(i);
         }
     }
 

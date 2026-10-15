@@ -16,17 +16,6 @@ were no release tags at the time). The README describes only the
   `docs/DATA_SOURCES.md` (citations, acknowledgments, licenses), and
   `docs/REQUIREMENTS.md` (traceability).
 - Project version in CMake (`0.6.0`).
-- **MIT License** for the source code (bundled catalog data stays under
-  its providers' terms).
-- **Portable Windows release** and **GitHub Actions CI**:
-  - static build (`x64-windows-static` plus the static MSVC runtime, so no
-    DLLs are needed);
-  - `CMakePresets.json`, and CPack zip packaging with a data snapshot;
-  - an end-user `README.txt` and `LICENSE` inside the zip;
-  - a workflow that validates on Linux, then builds, tests, smoke-tests
-    and packages on Windows, and publishes a Release on `v*` tags.
-- `ExoSim --selftest` (headless install check), `--version` and `--help`.
-- `tools/validate_shaders.py` (GLSL reference-compiler check, used in CI).
 
 **Fixed** (all found by the new suite or while documenting)
 - Kepler solver returned wrong roots for e ≥ 0.8 just past apoapsis
@@ -41,10 +30,6 @@ were no release tags at the time). The README describes only the
   obliquity.
 - Star proper motion is now applied from the Hipparcos catalog epoch
   (J1991.25), not from the present day.
-- Assets now load relative to the executable rather than the launch
-  directory, so the app works from shortcuts and other folders.
-- `GroupByHost` now uses a hash map (O(n)) instead of a linear scan per
-  row: ~26 ms → ~8.5 ms at today's catalog size.
 
 ## 0.5.0: Real sky, mission planner, rendering accuracy
 - **Mission Planner** (Sol): Hohmann transfers, launch-window search,
