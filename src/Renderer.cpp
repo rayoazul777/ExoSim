@@ -579,6 +579,7 @@ bool Renderer::init() {
 
     buildSphereWireframe();
     buildSolidSphereMesh();
+    buildSurfaceCapMesh();
     buildRingMesh();
     buildSkyboxQuad();
 
@@ -707,6 +708,54 @@ void Renderer::buildSolidSphereMesh() {
     m_solidSphereIndexCount = static_cast<GLsizei>(indices.size());
 }
 
+void Renderer::buildSurfaceCapMesh() {
+    // Spherical cap around +Z: ring angles grow exponentially from ~7e-6 rad
+    // at the centre to 0.6 rad at the rim, so resolution is highest right
+    // under a landing craft. Same vertex layout as the sphere (pos + UV),
+    // and positions lie exactly on the unit sphere - the surface shader's
+    // noise domain - so the pattern matches the whole-sphere mesh.
+    constexpr int kRings = 96, kSegs = 160;
+    constexpr double kMaxAngle = 0.6, kK = 9.0;
+    constexpr double kPi = 3.14159265358979323846;
+    std::vector<float> verts;
+    auto push = [&](double a, double phi) {
+        double x = std::sin(a) * std::cos(phi), y = std::sin(a) * std::sin(phi), z = std::cos(a);
+        double u = std::atan2(z, x) / (2.0 * kPi);
+        if (u < 0.0) u += 1.0;
+        double v = std::acos(std::clamp(y, -1.0, 1.0)) / kPi;
+        verts.insert(verts.end(), {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z),
+                                   static_cast<float>(u), static_cast<float>(v)});
+    };
+    push(0.0, 0.0); // centre
+    for (int i = 1; i <= kRings; ++i) {
+        double a = kMaxAngle * (std::exp(kK * i / kRings) - 1.0) / (std::exp(kK) - 1.0);
+        for (int j = 0; j < kSegs; ++j) push(a, 2.0 * kPi * j / kSegs);
+    }
+    std::vector<unsigned int> idx;
+    for (int j = 0; j < kSegs; ++j) { idx.push_back(0); idx.push_back(1 + j); idx.push_back(1 + (j + 1) % kSegs); }
+    for (int i = 1; i < kRings; ++i) {
+        unsigned int r0 = 1 + (i - 1) * kSegs, r1 = 1 + i * kSegs;
+        for (int j = 0; j < kSegs; ++j) {
+            unsigned int jn = (j + 1) % kSegs;
+            idx.insert(idx.end(), {r0 + j, r1 + j, r0 + jn, r0 + jn, r1 + j, r1 + jn});
+        }
+    }
+    glGenVertexArrays(1, &m_capVao);
+    glGenBuffers(1, &m_capVbo);
+    glGenBuffers(1, &m_capEbo);
+    glBindVertexArray(m_capVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_capVbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), verts.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_capEbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+    m_capIndexCount = static_cast<GLsizei>(idx.size());
+}
+
 void Renderer::buildRingMesh() {
     // Unit annulus as a triangle strip: for each angular segment, emit an
     // inner-rim vertex (radial=0) then an outer-rim vertex (radial=1).
@@ -772,6 +821,9 @@ void Renderer::shutdown() {
     glDeleteBuffers(1, &m_solidSphereVbo);
     glDeleteBuffers(1, &m_solidSphereEbo);
     glDeleteVertexArrays(1, &m_solidSphereVao);
+    glDeleteBuffers(1, &m_capVbo);
+    glDeleteBuffers(1, &m_capEbo);
+    glDeleteVertexArrays(1, &m_capVao);
     glDeleteBuffers(1, &m_ringVbo);
     glDeleteVertexArrays(1, &m_ringVao);
     glDeleteProgram(m_ringShader);
@@ -908,8 +960,13 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uKnownBanded"), 0);
     }
 
-    glBindVertexArray(m_solidSphereVao);
-    glDrawElements(GL_TRIANGLES, m_solidSphereIndexCount, GL_UNSIGNED_INT, 0);
+    if (m_surfaceCapMode) {
+        glBindVertexArray(m_capVao);
+        glDrawElements(GL_TRIANGLES, m_capIndexCount, GL_UNSIGNED_INT, 0);
+    } else {
+        glBindVertexArray(m_solidSphereVao);
+        glDrawElements(GL_TRIANGLES, m_solidSphereIndexCount, GL_UNSIGNED_INT, 0);
+    }
     glBindVertexArray(0);
 }
 
@@ -1014,6 +1071,21 @@ void Renderer::renderStarCatalog(const glm::mat4& viewProjRot) {
 
 void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
                                     const glm::vec3& color, float alpha) {
+    drawScratchLines(viewProj, points, color, alpha, GL_LINE_LOOP);
+}
+
+void Renderer::renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                               const glm::vec3& color, float alpha) {
+    drawScratchLines(viewProj, points, color, alpha, GL_LINE_STRIP);
+}
+
+void Renderer::renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                                  const glm::vec3& color, float alpha) {
+    drawScratchLines(viewProj, points, color, alpha, GL_LINES);
+}
+
+void Renderer::drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                                const glm::vec3& color, float alpha, unsigned int mode) {
     if (points.size() < 2) return;
 
     GLuint vao = 0, vbo = 0;
@@ -1029,7 +1101,7 @@ void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<
     glUniformMatrix4fv(glGetUniformLocation(m_lineShader, "uViewProj"), 1, GL_FALSE, &viewProj[0][0]);
     glUniform3f(glGetUniformLocation(m_lineShader, "uColor"), color.r, color.g, color.b);
     glUniform1f(glGetUniformLocation(m_lineShader, "uAlpha"), alpha);
-    glDrawArrays(GL_LINE_LOOP, 0, static_cast<GLsizei>(points.size()));
+    glDrawArrays(static_cast<GLenum>(mode), 0, static_cast<GLsizei>(points.size()));
 
     glBindVertexArray(0);
     glDeleteBuffers(1, &vbo);

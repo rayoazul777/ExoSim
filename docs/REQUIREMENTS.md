@@ -28,6 +28,20 @@ marked, not omitted.
 | MIS-R4 | State the model's idealizations (no gravity assists, ecliptic-plane transfer, no capture burn) in the UI | I, D | Met |
 | MIS-R5 | Support gravity-assist trajectories | — | **Not met** (roadmap) |
 
+## Mission operations and landing
+
+| ID | Requirement | Verif. | Status |
+|---|---|---|---|
+| FSW-R1 | Compute arrival orbit-insertion Δv from the approach v∞ | T: FSW-15, FSW-16 | Met (not for moons of other planets: tour not modeled) |
+| FSW-R2 | Simulate entry, descent and landing at fixed physics (100 Hz) and guidance (20 Hz) rates, independent of frame rate | T: FSW-1, FSW-6, FSW-14 | Met |
+| FSW-R3 | Land within 10 m of the guidance target at ≤ 1 m/s for powered landers | T: FSW-3, FSW-5, FSW-8, FSW-9 | Met (Mars 0.05 m, Moon 1.2 m) |
+| FSW-R4 | Reproduce published descent outcomes within stated tolerances | T: FSW-3, FSW-4, FSW-7, FSW-10, FSW-11, FSW-12 | Met (plausibility level; vehicle parameters are representative) |
+| FSW-R5 | Never simulate a landing on a body with no solid surface | T: FSW-13 | Met |
+| FSW-R6 | Order mission events in time, and report the correct phase at any time | T: FSW-21…23 | Met |
+| FSW-R7 | Show signal delay (one-way light time) to Earth | T: FSW-17 | Met |
+| FSW-R8 | Export telemetry in an open format | I: CSV export | Met (cruise state vectors and landing telemetry) |
+| FSW-R9 | Label simplifications in the UI | I, D | Met |
+
 ## Data handling
 
 | ID | Requirement | Verif. | Status |
@@ -45,7 +59,7 @@ marked, not omitted.
 | ENG-1 | Core modules build and test without a GPU | T: `ExoSimTests` | Met |
 | ENG-2 | No memory errors or undefined behavior in the core | T: suite under ASan + UBSan | Met (GCC) |
 | ENG-3 | All shaders compile under the GLSL reference compiler | T: `glslangValidator` | Met (13/13) |
-| ENG-4 | Deterministic, replayable simulation | — | **Not met**: the clock advances by wall-clock time |
+| ENG-4 | Deterministic, replayable simulation | T: FSW-14, FSW-19, FSW-20 | **Partially met**: fixed-tick clock independent of frame rate; the landing simulation is bit-for-bit reproducible. Recorded-input replay of whole sessions is not yet implemented |
 | ENG-5 | Continuous integration on Windows and Linux | I: workflow file | Implemented. Linted (actionlint) and its pass/fail logic tested locally; **not yet run on GitHub** |
 | ENG-8 | A downloadable build runs on a clean Windows machine with no installs | T: CI dependency check + packaged `--selftest` | Implemented; verified end-to-end on Linux, Windows CI pending first run |
 | ENG-6 | Runtime configuration from a file rather than constants | — | **Not met** (roadmap) |

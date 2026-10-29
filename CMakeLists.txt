@@ -20,7 +20,7 @@ if(CMAKE_HOST_WIN32 AND (NOT CMAKE_TOOLCHAIN_FILE OR NOT EXISTS "${CMAKE_TOOLCHA
     endif()
 endif()
 
-project(ExoSim VERSION 0.6.0 LANGUAGES CXX)
+project(ExoSim VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,9 @@ add_executable(ExoSimTests
     src/MissionPlanner.cpp
     src/Dataset.cpp
     src/PlanetClassifier.cpp
+    src/BodyConstants.cpp
+    src/LandingSimulator.cpp
+    src/MissionTimeline.cpp
 )
 target_include_directories(ExoSimTests PRIVATE src)
 target_link_libraries(ExoSimTests PRIVATE glm::glm nlohmann_json::nlohmann_json)
@@ -73,6 +76,9 @@ if(EXOSIM_BUILD_APP)
         src/StarClassifier.cpp
         src/SolarSystemAppearance.cpp
         src/MissionPlanner.cpp
+        src/BodyConstants.cpp
+        src/LandingSimulator.cpp
+        src/MissionTimeline.cpp
     )
     target_include_directories(ExoSim PRIVATE src)
     target_compile_definitions(ExoSim PRIVATE EXOSIM_VERSION="${PROJECT_VERSION}")

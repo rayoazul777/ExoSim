@@ -4,6 +4,65 @@ Versions 0.1–0.5 were reconstructed from the development history (there
 were no release tags at the time). The README describes only the
 **current** state; historical behavior lives here.
 
+## 0.7.0: Mission operations and landing simulation
+
+**Added**
+- **Click the spacecraft to follow it.** Clicking the rocket (or "Follow
+  spacecraft") locks a chase camera onto it, with lock-on brackets. Zoom
+  works down to close range.
+- **Landing view.** At arrival the mission continues into a simulated
+  entry, descent and landing, watched in real time from a chase camera
+  that zooms in as the craft descends. It shows a terrain grid, the
+  flown and remaining trajectory, the guidance target, and a vehicle
+  glyph for each phase (heat-shield plasma, parachute, powered lander
+  with an engine plume).
+- `LandingSimulator`: deterministic 2-D EDL simulation. Physics runs with
+  RK4 at a fixed 100 Hz; guidance and control run at 20 Hz with
+  zero-order hold. A sequencer moves between phases on measured
+  conditions. Four vehicle classes:
+  - Mars, Perseverance-class: lifting entry, then parachute, heat-shield
+    jettison, backshell separation, and ZEM/ZEV powered descent to a
+    0.75 m/s touchdown.
+  - Venus, Venera-class: parachute, then free fall on a drag disk.
+  - Titan, Huygens-class: main parachute, then drogue to a 4.5 m/s
+    touchdown.
+  - Airless bodies, Apollo LM-class: powered descent from a low orbit.
+  - Giant planets end at orbit insertion.
+- `MissionTimeline`: a sequence of events (launch, injection burn,
+  correction slots, approach, orbit insertion or atmospheric entry, every
+  landing event) and the mission phase at any time.
+  - Orbit-insertion Δv is now computed. This closes the "capture burn not
+    included" gap; for example, lunar orbit insertion is ~0.8 km/s.
+  - Mission elapsed time, and one-way light time (the signal delay to
+    Earth).
+- **Flight Director** window:
+  - MET, UTC, phase and next event; warp controls (pause, 1×, 60×,
+    1 h/s, 1 d/s, 10 d/s); "warp to events".
+  - Live telemetry: Sun distance, heliocentric speed, Earth and target
+    range, light time.
+  - A scrolling sequence-of-events log.
+  - CSV export of the cruise state vectors and of the landing telemetry.
+- **Landing Telemetry** window: altitude, velocity components, sensed g,
+  dynamic pressure, heat flux, propellant and throttle; altitude and speed
+  strip charts; limit monitors (green/yellow/red) for peak load, heat
+  flux, touchdown speed, propellant margin and landing error.
+- `SimClock`: a deterministic fixed-tick clock. Simulation time depends
+  only on tick count and warp, not on frame rate. It stops exactly on
+  events: at launch it drops to 60×, and at the landing to real time.
+- `BodyConstants`: GM, radius and atmosphere for 23 Solar System bodies,
+  with tabulated density profiles for Venus and Titan.
+- 24 new validation checks (FSW-1…24), for 87 in total. They include
+  touchdown speeds and durations against Perseverance, Apollo 11 and
+  Huygens; a bit-for-bit determinism re-run; the capture-Δv identity and
+  Juno JOI; light time; and clock behavior.
+- `--scenario <body> [--edl-time s | --cruise f] [--screenshot file.ppm]`
+  opens a planned mission at a given moment, for reproducible
+  documentation screenshots.
+
+**Changed**
+- The simulation speed slider is logarithmic, so real time (1×) is
+  reachable.
+
 ## 0.6.0: Validation and documentation
 
 **Added**

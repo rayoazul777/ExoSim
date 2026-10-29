@@ -2,7 +2,7 @@
 
 **A C++ orbital simulation and visualization system.** It ingests real astronomical catalogs, propagates orbits, and computes mission-transfer opportunities, and it keeps validated physical data clearly separate from assumptions and visualization choices.
 
-Version 0.6.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CHANGELOG.md)
+Version 0.7.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CHANGELOG.md)
 
 <!-- Screenshots and demo video: see "Demo" below. -->
 
@@ -16,8 +16,12 @@ Version 0.6.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CH
 - **Orbital mechanics.**
   - Kepler-equation propagation on real J2000 elements, so Sol's planets sit where they really are on today's date.
   - A Hohmann mission planner that finds real launch windows and computes patched-conic Δv. For example, it finds the late-2026 Mars window: 265 days, 3.68 km/s from low Earth orbit.
+- **Mission operations and landing.**
+  - Click the spacecraft to follow it, with a fixed-tick clock running anywhere from real time to 10 days/s and stopping on mission events.
+  - A sequence of events and live telemetry, including the signal delay to Earth.
+  - At arrival, a simulated entry, descent and landing played back in real time. It uses closed-loop ZEM/ZEV powered-descent guidance at 20 Hz on 100 Hz physics. The simulated touchdowns match Perseverance (0.75 m/s), Apollo 11 (~12 min of powered descent) and Huygens (4.5 m/s).
 - **Validated.**
-  - 63 automated checks against conservation laws, closed-form solutions and published astronomical events. Modeled oppositions of Mars, Jupiter and Saturn land within **12–70 minutes** of the published times.
+  - 87 automated checks against conservation laws, closed-form solutions, published astronomical events and real landings. Modeled oppositions of Mars, Jupiter and Saturn land within **12–70 minutes** of the published times.
   - Clean under AddressSanitizer and UndefinedBehaviorSanitizer.
   - All shaders pass the Khronos reference compiler.
   - Writing the suite found and fixed four real defects. See [Validation](docs/VALIDATION.md).
@@ -32,6 +36,7 @@ Version 0.6.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CH
 | Mission analysis | Launch-window root-finding on real, eccentric orbits; patched-conic Δv; synodic periods | MIS-1…7 |
 | Data engineering | Four-source ingestion (Python and C++ tools), type-safe parsing, graceful degradation, positional cross-match of 150k double stars in under 0.5 s | DAT-1…5, [Architecture → Performance](docs/ARCHITECTURE.md#performance) |
 | Astrometry | Equatorial→ecliptic frame alignment; parallax re-projection of the sky from other stars; linear proper motion from epoch J1991.25 | [Architecture → Frames](docs/ARCHITECTURE.md#time-systems-and-reference-frames) |
+| Flight software patterns | Fixed-rate GNC loop (100 Hz physics, 20 Hz guidance, zero-order hold), phase sequencer, ZEM/ZEV guidance, limit monitors, deterministic fixed-tick clock, telemetry export | FSW-1…24 |
 | Rendering | GL 3.3 renderer with procedural 3-D-noise surfaces, bump shading, real-radius ring bands, a point-sprite star catalog, and a CRT post-process | 13/13 shaders validated |
 
 ## Validation summary
@@ -44,6 +49,8 @@ Version 0.6.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CH
 | Hohmann time and Δv vs. closed form | Exact to reported precision |
 | Planned trajectory end point vs. target | < 2e-11 AU |
 | Malformed / missing / mistyped input | Handled without crashing |
+| Mars / Moon / Titan touchdown speed vs. Perseverance / Apollo / Huygens | 0.75 / 0.9 / 4.45 m/s (published 0.75 / ~0.9 / ~4.5) |
+| Landing simulation re-run | Bit-for-bit identical |
 
 Full table, methods, tolerances, and what is **not** yet validated:
 [docs/VALIDATION.md](docs/VALIDATION.md).
@@ -98,7 +105,7 @@ Requirements: Windows 10/11 x64 with OpenGL 3.3.
 cmake --preset windows-portable
 cmake --build --preset windows-portable
 ctest --preset windows-portable
-cd build\windows-portable; cpack -C Release   # -> ExoSim-0.6.0-win64.zip
+cd build\windows-portable; cpack -C Release   # -> ExoSim-0.7.0-win64.zip
 ```
 The first configure builds every dependency statically, so it's slow once.
 
@@ -110,11 +117,13 @@ console states which one.
 - **Navigate:** left-drag to orbit the camera, scroll to zoom. Pick a system from the searchable list; filter by planet count.
 - **Inspect:** "Inspect Planet" or "Inspect <moon>" opens a close-up with physical data and labeled estimates. Zooming in reveals more surface detail.
 - **Plan a mission (Sol):** in the Mission Planner, choose a vehicle and destination, then "Plan next launch window". This shows the launch and arrival dates, transfer time, Δv, arrival speed and window cadence. "Jump to launch" plays the trajectory.
+- **Fly the mission:** the Flight Director window shows mission elapsed time, phase, the next event, live telemetry and the sequence of events. Click the rocket (or "Follow spacecraft") to ride along. Time warp runs from 1× (real time) to 10 days/s; with "warp to events" on, the clock stops at launch and again at the start of the landing.
+- **Watch the landing:** at arrival (or with "Skip ahead to the landing") the Landing view opens. It plays entry, parachutes and powered descent in real time, with telemetry, strip charts and limit monitors. Drag to orbit the chase camera; scroll to zoom. Both windows can export telemetry as CSV.
 - **Controls:** simulation speed and date ("Today" resets it), logarithmic distance scaling, star-size exaggeration, and a sky-epoch slider that shows stellar proper motion over ±100,000 years.
 
 ## Demo
 
-Screenshots from the Windows build (v0.6.0). A demo video is still to come.
+Screenshots from the Windows build (v0.6.0) and the scenario mode (v0.7.0). A demo video is still to come.
 
 ### Mission planning: Earth to Mars
 
@@ -130,6 +139,40 @@ and reference rings (10 AU to 1,000 AU) are on.*
 
 *The same mission, run forward past the arrival date. The spacecraft has
 followed the arc to Mars's orbit, and the status reads "Arrived".*
+
+### Flying the mission: follow the spacecraft and watch it land
+
+![Chase camera locked onto the spacecraft 7.9 days before Mars entry, with the Flight Director's telemetry and sequence of events](docs/images/06-follow-spacecraft.png)
+
+*Clicking the rocket locks the camera onto it. Here it is 97% of the way
+to Mars (the yellow dot, 2.66 million km ahead). The Flight Director
+shows mission elapsed time, the phase, live telemetry and a 14-minute
+signal delay to Earth. Its sequence of events runs from liftoff through
+every landing event.*
+
+![Mars entry, descent and landing: the capsule under its parachute at 8 km altitude](docs/images/07-mars-parachute.png)
+
+*At arrival the Landing view plays the descent in real time. The
+capsule entered at 5.70 km/s, peaked at 8.5 g, and opened its parachute
+at 9.3 km and 420 m/s (Perseverance: ~11 km). The orange line is the
+flown path; limit monitors check load and heat flux against the vehicle
+class's limits.*
+
+![Powered descent on Mars, with the engines firing under ZEM/ZEV guidance](docs/images/08-mars-powered-descent.png)
+
+*After backshell separation at 2.1 km, the descent engines fly a
+closed-loop ZEM/ZEV guidance law at 20 Hz. They null the horizontal
+velocity and touch down at 0.75 m/s, 5 cm from the guidance target.*
+
+![Huygens-class probe under its drogue parachute on Titan, 47 km up](docs/images/09-titan-descent.png)
+
+*Titan: a Huygens-class probe under its drogue parachute. The simulated
+descent takes 2 h 47 min and touches down at 4.45 m/s (Huygens, 2005:
+~2 h 27 min, ~4.5 m/s). The signal delay to Earth is 70 minutes.*
+
+These four were rendered with `ExoSim --scenario <body> --edl-time <s>`
+(or `--cruise <fraction>`) `--screenshot <file>` under software OpenGL.
+That mode reproduces any moment of a mission exactly.
 
 ### Sol, the home system
 
@@ -184,9 +227,14 @@ that CHANGELOG section. `0.x` versions are marked as pre-releases.
 ## Known limitations
 
 - **Two-body motion** only, with Standish elements held fixed. Accuracy is excellent near 2024–2026 but unmeasured for distant eras.
-- **Hohmann transfers are an idealization.** There are no gravity assists, so outer-planet times far exceed real missions (Voyager 2 reached Neptune in ~12 yr, where Hohmann takes ~30). The transfer is computed in the ecliptic plane, and no capture burn is modeled.
+- **Hohmann transfers are an idealization.** There are no gravity assists, so outer-planet times far exceed real missions (Voyager 2 reached Neptune in ~12 yr, where Hohmann takes ~30). The transfer is computed in the ecliptic plane. Capture is a single impulsive burn, and it is not modeled for moons of other planets.
+- **The landing simulation is simplified.**
+  - Physics: 2-D point mass on a non-rotating sphere, with no winds and no terrain relief.
+  - Entry: ballistic, or full lift-up on Mars, not guided bank-angle control.
+  - Vehicles: parameters are representative of a class, not exact.
+  - Moon targets: the tour from arrival at the parent planet to the moon is a placeholder.
 - **Exoplanet orbital phases are unknown.** Orbit shapes and periods are real; positions along the orbit are not.
-- **The simulation clock is not deterministic.** It advances by wall-clock time, so sessions can't be replayed exactly (see [Requirements](docs/REQUIREMENTS.md), ENG-4).
+- **No session replay yet.** The clock is now fixed-tick and the landing is deterministic, but user inputs aren't recorded, so a whole session can't be replayed (see [Requirements](docs/REQUIREMENTS.md), ENG-4).
 - **Not flight software.** See [Requirements → Out of scope](docs/REQUIREMENTS.md#out-of-scope).
 
 ## Roadmap
@@ -195,7 +243,7 @@ Priorities favor mission-analysis depth and engineering rigor over more visuals.
 
 1. **Lambert solver and porkchop plots.** Arbitrary-date transfers, and launch/arrival Δv contour maps.
 2. **JPL Horizons validation.** Position error envelopes over 1950–2050.
-3. **Deterministic fixed-step clock with recorded-input replay**, plus a refactor of `main.cpp` into testable state and UI units (see [Architecture → Coupling](docs/ARCHITECTURE.md#coupling-and-what-id-refactor-first)).
+3. **Recorded-input replay** on top of the fixed-tick clock, plus a refactor of `main.cpp` into testable state and UI units (see [Architecture → Coupling](docs/ARCHITECTURE.md#coupling-and-what-id-refactor-first)).
 4. **Static analysis in CI** (clang-tidy, clang-format checks), plus a configuration file and structured logging.
 5. **Gravity-assist chains** with sphere-of-influence transitions.
 

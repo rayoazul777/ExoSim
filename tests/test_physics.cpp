@@ -12,6 +12,10 @@
 #include "MissionPlanner.h"
 #include "Dataset.h"
 #include "PlanetClassifier.h"
+#include "LandingSimulator.h"
+#include "MissionTimeline.h"
+#include "BodyConstants.h"
+#include "SimClock.h"
 
 #include <cmath>
 #include <cstdio>
@@ -20,6 +24,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
@@ -249,11 +254,101 @@ void testClassifier() {
     for (const char* n : {"Jupiter", "Saturn"})
         check(std::string("CLS-2 ") + n, "Classified as gas giant", gas, typeOf(n), 0.0, "enum", "Known composition");
 }
+
+// ---------------- Flight software: EDL, guidance, sequencing, clock ----------------
+void testFlightSoftware() {
+    // Entry speed = vis-viva from the approach hyperbola: sqrt(vInf^2 + 2 mu / r_EI).
+    LandingResult mars = LandingSimulator::Run({"Mars", 2.65});
+    const BodyConstants* mb = Bodies::Lookup("Mars");
+    double rEI = mb->radiusKm * 1000.0 + mars.entryAltitudeM;
+    double vEI = std::sqrt(2650.0 * 2650.0 + 2.0 * mb->gmKm3s2 * 1e9 / rEI);
+    check("FSW-1", "Mars entry speed = sqrt(vInf^2 + 2mu/r) at entry interface", vEI, mars.entrySpeedMs, 1e-6, "m/s",
+          "Analytic (vis-viva, hyperbolic approach)");
+    check("FSW-2", "Mars EDL lands (powered descent, ZEM/ZEV guidance)", 1.0, mars.landed ? 1.0 : 0.0, 0.0, "bool",
+          "Expected behaviour");
+    check("FSW-3", "Mars touchdown speed", 0.75, mars.touchdownSpeedMs, 0.1, "m/s",
+          "Perseverance sky-crane touchdown ~0.75 m/s (NASA/JPL)");
+    double chuteAlt = -1.0;
+    for (const auto& e : mars.events)
+        if (e.text.rfind("Parachute deploy", 0) == 0) std::sscanf(e.text.c_str(), "Parachute deploy at %lf", &chuteAlt);
+    check("FSW-4", "Mars parachute deploy altitude (plausibility)", 11.0, chuteAlt, 4.0, "km",
+          "Perseverance: ~11 km (NASA/JPL); simplified lift-up entry");
+    check("FSW-5", "Mars landing error vs. guidance target", 0.0, mars.missDistanceM, 10.0, "m", "Closed-loop guidance accuracy");
+
+    LandingResult moon = LandingSimulator::Run({"Moon", 0.8});
+    const BodyConstants* lb = Bodies::Lookup("Moon");
+    double vCirc = std::sqrt(lb->gmKm3s2 * 1e9 / (lb->radiusKm * 1000.0 + moon.entryAltitudeM));
+    check("FSW-6", "Lunar descent starts at circular orbital speed", vCirc, moon.entrySpeedMs, 1e-6, "m/s", "Analytic sqrt(mu/r)");
+    check("FSW-7", "Lunar powered descent duration (PDI to touchdown)", 756.0, moon.durationS, 120.0, "s",
+          "Apollo 11: PDI to landing 12 min 36 s");
+    check("FSW-8", "Lunar touchdown speed", 0.9, moon.touchdownSpeedMs, 0.2, "m/s", "Apollo LM: ~0.9 m/s contact");
+    check("FSW-9", "Lunar landing error vs. guidance target", 0.0, moon.missDistanceM, 10.0, "m", "Closed-loop guidance accuracy");
+
+    LandingResult titan = LandingSimulator::Run({"Titan", 0.0});
+    check("FSW-10", "Titan touchdown speed under drogue chute", 4.5, titan.touchdownSpeedMs, 0.7, "m/s",
+          "Huygens 2005: ~4.5 m/s (ESA)");
+    check("FSW-11", "Titan descent duration (entry to touchdown)", 2.45 * 3600.0, titan.durationS, 0.6 * 3600.0, "s",
+          "Huygens: ~2 h 27 min under parachutes (ESA)");
+    LandingResult venus = LandingSimulator::Run({"Venus", 2.7});
+    check("FSW-12", "Venus probe lands below 8 m/s on its drag disk", 1.0,
+          venus.landed && venus.touchdownSpeedMs < 8.0 ? 1.0 : 0.0, 0.0, "bool", "Venera landers: ~7-8 m/s");
+    LandingResult jup = LandingSimulator::Run({"Jupiter", 5.6});
+    check("FSW-13", "No landing on a body without a solid surface", 0.0, jup.valid ? 1.0 : 0.0, 0.0, "bool", "Expected behaviour");
+
+    // Determinism: the same inputs must reproduce the same telemetry bit-for-bit.
+    LandingResult mars2 = LandingSimulator::Run({"Mars", 2.65});
+    double diffs = mars.samples.size() == mars2.samples.size() ? 0.0 : 1e9;
+    for (size_t i = 0; diffs == 0.0 && i < mars.samples.size(); ++i) {
+        const auto &a = mars.samples[i], &b = mars2.samples[i];
+        if (a.t != b.t || a.altitudeM != b.altitudeM || a.speedMs != b.speedMs || a.propellantKg != b.propellantKg) diffs += 1.0;
+    }
+    check("FSW-14", "Landing simulation is deterministic (re-run, bitwise)", 0.0, diffs, 0.0, "differing samples", "ENG-4");
+
+    // Capture burn: with vInf = 0 into a circular orbit, dv = (sqrt2 - 1) * v_circ.
+    double mu = 4902.8, r = 1837.4;
+    check("FSW-15", "Capture dv identity (vInf=0, circular): (sqrt2-1) v_circ",
+          (std::sqrt(2.0) - 1.0) * std::sqrt(mu / r), MissionTimeline::CaptureDvKms(mu, 0.0, r, r), 1e-12, "km/s", "Analytic");
+    const BodyConstants* jb = Bodies::Lookup("Jupiter");
+    check("FSW-16", "Jupiter capture into 1.05 x 100 R orbit (vInf 5.6 km/s)", 0.54,
+          MissionTimeline::CaptureDvKms(jb->gmKm3s2, 5.6, jb->radiusKm * 1.05, jb->radiusKm * 100.0), 0.15, "km/s",
+          "Juno JOI 2016: 0.54 km/s (similar orbit)");
+
+    check("FSW-17", "One-way light time over 1 AU", 499.004784, MissionTimeline::LightTimeSec({1, 0, 0}, {0, 0, 0}), 1e-5, "s",
+          "IAU: 1 AU / c = 499.004784 s");
+    std::string met = MissionTimeline::FormatMET(3.0 * 86400.0 + 4 * 3600 + 5 * 60 + 6);
+    check("FSW-18", "MET formatting T+003d 04:05:06 (got " + met + ")", 1.0, met == "T+003d 04:05:06" ? 1.0 : 0.0, 0.0, "bool", "Format spec");
+
+    // Clock: identical sim time whatever the frame pacing; exact stop at events.
+    SimClock a, b;
+    a.timeDays = b.timeDays = 0.0; a.warp = b.warp = 86400.0;
+    for (int i = 0; i < 120; ++i) a.advance(1.0 / 120.0 + 1e-12);
+    double uneven[] = {0.3, 0.05, 0.2, 0.15, 0.3 + 1e-9};
+    for (double d : uneven) b.advance(d);
+    check("FSW-19", "Clock: sim time independent of frame pacing", a.timeDays, b.timeDays, 1e-12, "days", "Fixed-tick design");
+    SimClock c; c.timeDays = 0.0; c.warp = 86400.0 * 10.0;
+    auto adv = c.advance(1.0, 0.123456);
+    check("FSW-20", "Clock: lands exactly on the next event and drops to real time", 0.123456,
+          adv.hitStop && c.warp == 1.0 ? c.timeDays : -1.0, 0.0, "days", "Warp-to-event behaviour");
+
+    // Sequencing on a real Mars plan.
+    auto sol = Dataset::DemoSolarSystem();
+    MissionPlan plan = MissionPlanner::PlanHohmann(solPlanet(sol, "Earth").elements, solPlanet(sol, "Mars").elements, 9800.0, "Mars");
+    MissionTimelineData tl = MissionTimeline::Build(plan, "Mars", false, "Falcon Heavy");
+    bool sorted = std::is_sorted(tl.events.begin(), tl.events.end(),
+                                 [](const TimelineEvent& x, const TimelineEvent& y) { return x.day < y.day; });
+    check("FSW-21", "Mission timeline events are in time order", 1.0, sorted ? 1.0 : 0.0, 0.0, "bool", "Expected behaviour");
+    double ph = static_cast<double>(MissionTimeline::PhaseAt(tl, plan, plan.launchDay + 0.5 * plan.transferDays));
+    check("FSW-22", "Phase at mid-transfer is CRUISE", static_cast<double>(MissionPhase::Cruise), ph, 0.0, "enum", "Expected behaviour");
+    double phEnd = static_cast<double>(MissionTimeline::PhaseAt(tl, plan, plan.arrivalDay + 1.0));
+    check("FSW-23", "Phase after the landing sequence is SURFACE OPS", static_cast<double>(MissionPhase::Landed), phEnd, 0.0,
+          "enum", "Expected behaviour");
+    check("FSW-24", "Mars direct entry needs no capture burn", 0.0, tl.captureDvKms, 0.0, "km/s", "Perseverance: direct entry");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     bool markdown = argc > 1 && std::string(argv[1]) == "--markdown";
-    testKepler(); testEphemeris(); testMission(); testTime(); testData(); testClassifier();
+    testKepler(); testEphemeris(); testMission(); testTime(); testData(); testClassifier(); testFlightSoftware();
 
     int failed = 0;
     if (markdown) {

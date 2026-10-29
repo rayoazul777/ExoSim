@@ -32,6 +32,7 @@ is the next step.
 | **TIM** Time conversion | Days-since-J2000 → calendar date, including a leap day and a pre-epoch date | Guards the date shown on every launch window. |
 | **DAT** Data loading | Malformed JSON, missing files, rows with missing fields or wrong field types, WDS separation conversion | A failure-handling check: bad input must degrade gracefully, not crash. |
 | **CLS** Classifier | Known Solar System bodies classified from their real data | Sanity check that the heuristics give the right answer where the truth is known. |
+| **FSW** Flight software | Entry speed and orbital speed vs. vis-viva; touchdown speed and duration vs. Perseverance, Apollo 11, Huygens and Venera; guidance accuracy; capture-Δv identity and Juno JOI; light time; MET format; clock independence of frame pacing and exact event stops; timeline ordering and phases; a bit-for-bit re-run | Checks the descent physics against real missions, and checks the properties flight software depends on: determinism, sequencing and timing. The published comparisons are plausibility-level, because the vehicle parameters are representative of a class, not exact. |
 
 ## Results
 
@@ -100,8 +101,32 @@ is the next step.
 | CLS-1 Mars | Classified as rocky (from real density) | 1 | 1 | 0 | enum | Known composition | PASS |
 | CLS-2 Jupiter | Classified as gas giant | 5 | 5 | 0 | enum | Known composition | PASS |
 | CLS-2 Saturn | Classified as gas giant | 5 | 5 | 0 | enum | Known composition | PASS |
+| FSW-1 | Mars entry speed = sqrt(vInf^2 + 2mu/r) at entry interface | 5596.64 | 5596.64 | 1e-06 | m/s | Analytic (vis-viva, hyperbolic approach) | PASS |
+| FSW-2 | Mars EDL lands (powered descent, ZEM/ZEV guidance) | 1 | 1 | 0 | bool | Expected behaviour | PASS |
+| FSW-3 | Mars touchdown speed | 0.75 | 0.749988 | 0.1 | m/s | Perseverance sky-crane touchdown ~0.75 m/s (NASA/JPL) | PASS |
+| FSW-4 | Mars parachute deploy altitude (plausibility) | 11 | 9.5 | 4 | km | Perseverance: ~11 km (NASA/JPL); simplified lift-up entry | PASS |
+| FSW-5 | Mars landing error vs. guidance target | 0 | 0.0515247 | 10 | m | Closed-loop guidance accuracy | PASS |
+| FSW-6 | Lunar descent starts at circular orbital speed | 1672.65 | 1672.65 | 1e-06 | m/s | Analytic sqrt(mu/r) | PASS |
+| FSW-7 | Lunar powered descent duration (PDI to touchdown) | 756 | 720.03 | 120 | s | Apollo 11: PDI to landing 12 min 36 s | PASS |
+| FSW-8 | Lunar touchdown speed | 0.9 | 0.9 | 0.2 | m/s | Apollo LM: ~0.9 m/s contact | PASS |
+| FSW-9 | Lunar landing error vs. guidance target | 0 | 1.24893 | 10 | m | Closed-loop guidance accuracy | PASS |
+| FSW-10 | Titan touchdown speed under drogue chute | 4.5 | 4.4499 | 0.7 | m/s | Huygens 2005: ~4.5 m/s (ESA) | PASS |
+| FSW-11 | Titan descent duration (entry to touchdown) | 8820 | 10028.1 | 2.16e+03 | s | Huygens: ~2 h 27 min under parachutes (ESA) | PASS |
+| FSW-12 | Venus probe lands below 8 m/s on its drag disk | 1 | 1 | 0 | bool | Venera landers: ~7-8 m/s | PASS |
+| FSW-13 | No landing on a body without a solid surface | 0 | 0 | 0 | bool | Expected behaviour | PASS |
+| FSW-14 | Landing simulation is deterministic (re-run, bitwise) | 0 | 0 | 0 | differing samples | ENG-4 | PASS |
+| FSW-15 | Capture dv identity (vInf=0, circular): (sqrt2-1) v_circ | 0.67662 | 0.67662 | 1e-12 | km/s | Analytic | PASS |
+| FSW-16 | Jupiter capture into 1.05 x 100 R orbit (vInf 5.6 km/s) | 0.54 | 0.57232 | 0.15 | km/s | Juno JOI 2016: 0.54 km/s (similar orbit) | PASS |
+| FSW-17 | One-way light time over 1 AU | 499.005 | 499.005 | 1e-05 | s | IAU: 1 AU / c = 499.004784 s | PASS |
+| FSW-18 | MET formatting T+003d 04:05:06 (got T+003d 04:05:06) | 1 | 1 | 0 | bool | Format spec | PASS |
+| FSW-19 | Clock: sim time independent of frame pacing | 1 | 1 | 1e-12 | days | Fixed-tick design | PASS |
+| FSW-20 | Clock: lands exactly on the next event and drops to real time | 0.123456 | 0.123456 | 0 | days | Warp-to-event behaviour | PASS |
+| FSW-21 | Mission timeline events are in time order | 1 | 1 | 0 | bool | Expected behaviour | PASS |
+| FSW-22 | Phase at mid-transfer is CRUISE | 2 | 2 | 0 | enum | Expected behaviour | PASS |
+| FSW-23 | Phase after the landing sequence is SURFACE OPS | 6 | 6 | 0 | enum | Expected behaviour | PASS |
+| FSW-24 | Mars direct entry needs no capture burn | 0 | 0 | 0 | km/s | Perseverance: direct entry | PASS |
 
-**63 checks, 0 failed.**
+**87 checks, 0 failed.**
 
 ## Reading the ephemeris results
 
@@ -189,6 +214,11 @@ Stated plainly, so nothing here is over-read:
 - **Live data-source responses** (VizieR Hipparcos/WDS columns in
   particular) are parsed defensively but were not exercised from this
   environment. On a column mismatch, the fetch prints the actual header.
+- **Landing fidelity.** FSW checks compare outcomes (touchdown speed,
+  duration, parachute altitude) with real missions at plausibility
+  tolerances. The 2-D model has no winds, terrain, planet rotation or
+  guided lifting entry, and the vehicles are class-representative. It is
+  a teaching-grade EDL simulation, not a mission-design tool.
 - **Mission planner accuracy vs. real missions** is only a plausibility
   check (MIS-7): Hohmann transfers are an idealization (see
   `docs/ARCHITECTURE.md` → Assumptions).

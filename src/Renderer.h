@@ -50,6 +50,19 @@ public:
     // bookkeeping for something this infrequent.
     void renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
                               const glm::vec3& color, float alpha);
+    // Same, as an open polyline (no closing segment) ...
+    void renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                         const glm::vec3& color, float alpha);
+    // ... and as independent segments (points taken in pairs).
+    void renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                            const glm::vec3& color, float alpha);
+
+    // Landing view: when on, renderPlanetSurface draws a high-resolution
+    // spherical cap (centred on +Z, 0.6 rad radius, rings packed densely
+    // toward the centre) instead of the whole sphere, so the ground stays
+    // smooth and correctly placed metres from the camera. The whole-sphere
+    // mesh's flat facets sag kilometres below the true surface there.
+    void setSurfaceCapMode(bool on) { m_surfaceCapMode = on; }
 
     // Draws a SOLID-shaded planet surface: a procedurally generated,
     // stylized approximation (banded clouds for gas/ice giants, a
@@ -134,6 +147,9 @@ private:
     // planet surface pass - separate from the wireframe-only sphere above.
     GLuint m_solidSphereVao = 0, m_solidSphereVbo = 0, m_solidSphereEbo = 0;
     GLsizei m_solidSphereIndexCount = 0;
+    GLuint m_capVao = 0, m_capVbo = 0, m_capEbo = 0;
+    GLsizei m_capIndexCount = 0;
+    bool m_surfaceCapMode = false;
     GLuint m_surfaceShader = 0;
     float m_surfaceDetailOctaves = 5.0f;
     float m_surfaceEqTempK = 0.0f;
@@ -155,6 +171,9 @@ private:
 
     void buildSphereWireframe();
     void buildSolidSphereMesh();
+    void buildSurfaceCapMesh();
+    void drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
+                          const glm::vec3& color, float alpha, unsigned int mode);
     void buildRingMesh();
     void buildSkyboxQuad();
 

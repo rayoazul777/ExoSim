@@ -19,6 +19,10 @@ flowchart LR
         M["MissionPlanner"]
         C["PlanetClassifier / StarClassifier"]
         A["SolarSystemAppearance"]
+        B["BodyConstants"]
+        LS["LandingSimulator"]
+        TL["MissionTimeline"]
+        CLK["SimClock"]
     end
     subgraph App["ExoSim.exe"]
         MAIN["main.cpp: state, camera, UI (ImGui)"]
@@ -29,6 +33,9 @@ flowchart LR
     F1 & F2 -->|"data/*.json"| D
     D --> MAIN
     K & M & C & A --> MAIN
+    B --> LS --> TL
+    M --> TL
+    TL & CLK --> MAIN
     MAIN --> R --> CRT
 ```
 
@@ -40,6 +47,10 @@ flowchart LR
 | `PlanetClassifier` | Composition estimate from density / radius / mass, plus a curated table of published atmosphere detections | `Dataset` types |
 | `StarClassifier` | Spectral class and display color from effective temperature | — |
 | `SolarSystemAppearance` | Real, documented appearance of Sol's bodies (colors, features, axial tilt, real ring radii) | GLM |
+| `BodyConstants` | GM, radius and atmosphere (exponential, or tabulated for Venus and Titan) for 23 Solar System bodies | — |
+| `LandingSimulator` | Deterministic EDL simulation. RK4 physics at 100 Hz; guidance and control at 20 Hz with zero-order hold; a phase sequencer; ZEM/ZEV powered-descent guidance; limit checks; CSV telemetry | `BodyConstants` |
+| `MissionTimeline` | Sequence of events, mission phase at any time, capture Δv, MET, light time, cruise state-vector export | `MissionPlanner`, `LandingSimulator` |
+| `SimClock` | Fixed-tick (1/120 s) simulation clock with time warp and exact stops on events | — |
 | `Renderer` | All OpenGL drawing: orbits, stars, surfaces, rings, skybox, star catalog | glad, GLM |
 | `CrtPostProcess` | Offscreen framebuffer and CRT composite shader | glad |
 | `main.cpp` | Window, input, camera, simulation clock, UI panels, and orchestration | everything |
@@ -122,7 +133,9 @@ eccentricity. Distances are compressed for display (see Assumptions).
 |---|---|---|
 | Two-body Keplerian motion (no N-body perturbations) | Accuracy degrades slowly away from J2000; excellent for 2024–2026 (measured) | `VALIDATION.md` |
 | Hohmann transfers in the ecliptic plane | Minimum-energy, not fastest; ignores planet inclinations; outer-planet times far longer than real gravity-assist missions | Mission Planner HUD |
-| Patched conics, point-mass targets | Capture burn and moon transfers not modeled | Mission Planner HUD |
+| Patched conics, point-mass targets | Capture is one impulsive burn at periapsis; the tour from a parent planet to its moon is not modeled | Mission Planner / Flight Director HUD |
+| 2-D point-mass EDL on a non-rotating sphere; ballistic or full lift-up entry; class-representative vehicles | Descent profiles are representative, not mission-accurate: no winds, no terrain, no guided bank angle | Landing Telemetry HUD |
+| Single-exponential atmospheres (tabulated for Venus and Titan) | Density errors at altitude change where parachutes open; tabulated profiles fix the two worst cases | `BodyConstants.cpp` |
 | WDS separation is *projected* | A lower bound on the true separation, so companion periods are lower bounds | Companion HUD |
 | Linear proper motion | Ignores radial velocity and perspective acceleration over long spans | Sky epoch label |
 | Composition from density/radius/mass | Statistical estimate, never a measurement (except the curated published detections) | Planet Detail HUD |
@@ -163,10 +176,10 @@ planned split:
    parallax, proper motion), which is pure math and testable.
 3. **UI panels**: one class per window (control, detail, mission planner),
    reading `SimulationState`.
-4. **Deterministic stepping**: advance the clock by fixed steps from a
-   recorded input stream rather than wall-clock `dt`. This enables replay
-   and regression tests of full sessions. **Today the simulation clock is
-   not deterministic.**
+4. **Recorded-input replay**: the clock already advances in fixed ticks
+   (`SimClock`), and the landing is simulated once, deterministically, and
+   played back. What remains is logging tick-stamped user inputs (warp
+   changes, jumps) so whole sessions can be replayed as regression tests.
 
 The core modules are already decoupled from rendering, which is why they
 could be unit-tested without changes.
