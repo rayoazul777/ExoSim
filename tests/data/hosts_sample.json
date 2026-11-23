@@ -1,0 +1,152 @@
+[
+ {
+  "pl_name": "TRAPPIST-1 b",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 c",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 d",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 e",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 f",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 g",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "TRAPPIST-1 h",
+  "hostname": "TRAPPIST-1",
+  "sy_dist": null,
+  "ra": 346.6263919,
+  "dec": -5.0434618,
+  "glon": 69.71519,
+  "glat": -56.64891,
+  "st_teff": 2566.0
+ },
+ {
+  "pl_name": "55 Cnc e",
+  "hostname": "55 Cnc",
+  "sy_dist": 12.5855,
+  "ra": 133.1468373,
+  "dec": 28.3298154,
+  "glon": 196.79526,
+  "glat": 37.69663,
+  "st_teff": 5172.0
+ },
+ {
+  "pl_name": "55 Cnc b",
+  "hostname": "55 Cnc",
+  "sy_dist": 12.5855,
+  "ra": 133.1468373,
+  "dec": 28.3298154,
+  "glon": 196.79526,
+  "glat": 37.69663,
+  "st_teff": 5198.0
+ },
+ {
+  "pl_name": "55 Cnc c",
+  "hostname": "55 Cnc",
+  "sy_dist": 12.5855,
+  "ra": 133.1468373,
+  "dec": 28.3298154,
+  "glon": 196.79526,
+  "glat": 37.69663,
+  "st_teff": 5198.0
+ },
+ {
+  "pl_name": "55 Cnc d",
+  "hostname": "55 Cnc",
+  "sy_dist": 12.5855,
+  "ra": 133.1468373,
+  "dec": 28.3298154,
+  "glon": 196.79526,
+  "glat": 37.69663,
+  "st_teff": 5198.0
+ },
+ {
+  "pl_name": "55 Cnc f",
+  "hostname": "55 Cnc",
+  "sy_dist": 12.5855,
+  "ra": 133.1468373,
+  "dec": 28.3298154,
+  "glon": 196.79526,
+  "glat": 37.69663,
+  "st_teff": 5198.0
+ },
+ {
+  "pl_name": "Proxima Cen d",
+  "hostname": "Proxima Cen",
+  "sy_dist": 1.30119,
+  "ra": 217.3934657,
+  "dec": -62.6761821,
+  "glon": 313.92595,
+  "glat": -1.91805,
+  "st_teff": 2900.0
+ },
+ {
+  "pl_name": "Proxima Cen b",
+  "hostname": "Proxima Cen",
+  "sy_dist": 1.30119,
+  "ra": 217.3934657,
+  "dec": -62.6761821,
+  "glon": 313.92595,
+  "glat": -1.91805,
+  "st_teff": 2900.0
+ },
+ {
+  "pl_name": "Kepler-1813 b",
+  "hostname": "Kepler-1813",
+  "sy_dist": null,
+  "ra": 292.2399069,
+  "dec": 48.5115214,
+  "glon": 80.53671,
+  "glat": 14.20995,
+  "st_teff": 5167.0
+ }
+]

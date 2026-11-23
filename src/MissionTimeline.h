@@ -17,35 +17,35 @@ enum class MissionPhase { Prelaunch, Launch, Cruise, Approach, Arrival, Descent,
 const char* MissionPhaseName(MissionPhase p);
 
 struct TimelineEvent {
-    double day = 0.0;        // days since J2000
-    std::string code;        // short tag: LAUNCH, TMI, TCM-1, APPR, MOI, EDL, ...
+    double day = 0.0; // days since J2000
+    std::string code; // short tag: LAUNCH, TMI, TCM-1, APPR, MOI, EDL, ...
     std::string text;
-    bool isLanding = false;  // part of the descent sequence (played back in the Landing view)
+    bool isLanding = false; // part of the descent sequence (played back in the Landing view)
 };
 
 struct MissionTimelineData {
     bool valid = false;
-    std::string landingBody;           // body the lander targets (planet or moon)
+    std::string landingBody; // body the lander targets (planet or moon)
     std::vector<TimelineEvent> events; // sorted by day
 
     // Arrival
-    double captureDvKms = 0.0;         // orbit-insertion burn; 0 for direct entry
-    bool captureModeled = true;        // false: moon-of-another-planet legs aren't modeled
+    double captureDvKms = 0.0; // orbit-insertion burn; 0 for direct entry
+    bool captureModeled = true; // false: moon-of-another-planet legs aren't modeled
     std::string arrivalNote;
 
     // Landing
     bool hasLanding = false;
-    double landingStartDay = 0.0;      // entry interface / powered-descent start
+    double landingStartDay = 0.0; // entry interface / powered-descent start
     LandingResult landing;
-    std::string landingNote;           // why there is no landing, or what's skipped
+    std::string landingNote; // why there is no landing, or what's skipped
 };
 
 class MissionTimeline {
 public:
     // landingBody: the destination body itself (e.g. "Europa", "Mars").
     // arrivalIsParentSystem: true when the target is a moon of another planet.
-    static MissionTimelineData Build(const MissionPlan& plan, const std::string& landingBody,
-                                     bool arrivalIsParentSystem, const std::string& vehicleName);
+    static MissionTimelineData Build(const MissionPlan& plan, const std::string& landingBody, bool arrivalIsParentSystem,
+                                     const std::string& vehicleName);
 
     static MissionPhase PhaseAt(const MissionTimelineData& tl, const MissionPlan& plan, double day);
 
@@ -65,4 +65,8 @@ public:
     // Heliocentric ecliptic J2000 state vectors along the transfer arc,
     // every stepDays (position AU, velocity km/s). False on I/O failure.
     static bool WriteCruiseCsv(const MissionPlan& plan, const std::string& path, double stepDays = 1.0);
+
+    // Adds sphere-of-influence entry, closest approach and exit events for
+    // each flyby of a gravity-assist trajectory.
+    static void AddFlybyEvents(MissionTimelineData& tl, const struct FlybyPlan& flyby);
 };

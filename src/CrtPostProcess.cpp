@@ -1,4 +1,5 @@
 #include "CrtPostProcess.h"
+#include "Log.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -21,7 +22,7 @@ std::string readFile(const std::string& path) {
     ss << f.rdbuf();
     return ss.str();
 }
-}
+} // namespace
 
 void CrtPostProcess::createFramebuffer(int width, int height) {
     glGenFramebuffers(1, &m_fbo);
@@ -40,7 +41,7 @@ void CrtPostProcess::createFramebuffer(int width, int height) {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthRbo);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[CrtPostProcess] Framebuffer incomplete!\n";
+        Log::Warn("crt", Log::Cat("Framebuffer incomplete!"));
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -53,17 +54,14 @@ void CrtPostProcess::destroyFramebuffer() {
 }
 
 bool CrtPostProcess::init(int width, int height) {
-    m_width = width; m_height = height;
+    m_width = width;
+    m_height = height;
     createFramebuffer(width, height);
 
     // Fullscreen quad (two triangles), pos + uv interleaved.
     float verts[] = {
-        -1.f, -1.f,  0.f, 0.f,
-         1.f, -1.f,  1.f, 0.f,
-         1.f,  1.f,  1.f, 1.f,
-        -1.f, -1.f,  0.f, 0.f,
-         1.f,  1.f,  1.f, 1.f,
-        -1.f,  1.f,  0.f, 1.f,
+        -1.f, -1.f, 0.f, 0.f, 1.f, -1.f, 1.f, 0.f, 1.f,  1.f, 1.f, 1.f,
+        -1.f, -1.f, 0.f, 0.f, 1.f, 1.f,  1.f, 1.f, -1.f, 1.f, 0.f, 1.f,
     };
     glGenVertexArrays(1, &m_quadVao);
     glGenBuffers(1, &m_quadVbo);
@@ -80,7 +78,7 @@ bool CrtPostProcess::init(int width, int height) {
     // tweak the look live without recompiling C++.
     std::string fragSrc = readFile("shaders/crt.frag");
     if (fragSrc.empty()) {
-        std::cerr << "[CrtPostProcess] shaders/crt.frag not found or empty - check working directory.\n";
+        Log::Warn("crt", Log::Cat("shaders/crt.frag not found or empty - check working directory."));
         return false;
     }
 
@@ -97,7 +95,7 @@ bool CrtPostProcess::init(int width, int height) {
     if (!ok) {
         char log[1024];
         glGetShaderInfoLog(fs, sizeof(log), nullptr, log);
-        std::cerr << "[CrtPostProcess] crt.frag compile error: " << log << "\n";
+        Log::Warn("crt", Log::Cat("crt.frag compile error: ", log));
     }
 
     m_shader = glCreateProgram();
@@ -114,7 +112,8 @@ void CrtPostProcess::resize(int width, int height) {
     if (width == m_width && height == m_height) return;
     destroyFramebuffer();
     createFramebuffer(width, height);
-    m_width = width; m_height = height;
+    m_width = width;
+    m_height = height;
 }
 
 void CrtPostProcess::shutdown() {
@@ -143,8 +142,7 @@ void CrtPostProcess::endSceneAndPresent(float timeSeconds) {
     glBindTexture(GL_TEXTURE_2D, m_colorTex);
     glUniform1i(glGetUniformLocation(m_shader, "uScene"), 0);
     glUniform1f(glGetUniformLocation(m_shader, "uTime"), timeSeconds);
-    glUniform2f(glGetUniformLocation(m_shader, "uResolution"),
-                static_cast<float>(m_width), static_cast<float>(m_height));
+    glUniform2f(glGetUniformLocation(m_shader, "uResolution"), static_cast<float>(m_width), static_cast<float>(m_height));
 
     glBindVertexArray(m_quadVao);
     glDrawArrays(GL_TRIANGLES, 0, 6);

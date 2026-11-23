@@ -1,6 +1,7 @@
 #include "MissionTimeline.h"
 #include "BodyConstants.h"
 #include "KeplerOrbit.h"
+#include "GravityAssist.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,7 +11,6 @@
 namespace {
 constexpr double kAuKm = 1.495978707e8;
 constexpr double kCKms = 299792.458;
-constexpr double kMuSun = 1.32712440018e11;
 constexpr double kPi = 3.14159265358979323846;
 
 std::string fmt(const char* f, double a, double b = 0.0) {
@@ -18,7 +18,7 @@ std::string fmt(const char* f, double a, double b = 0.0) {
     std::snprintf(buf, sizeof(buf), f, a, b);
     return buf;
 }
-}
+} // namespace
 
 const char* MissionPhaseName(MissionPhase p) {
     switch (p) {
@@ -42,8 +42,8 @@ double MissionTimeline::CaptureDvKms(double mu, double vInf, double rp, double r
     return vPeriHyper - vPeriOrbit;
 }
 
-MissionTimelineData MissionTimeline::Build(const MissionPlan& plan, const std::string& landingBody,
-                                           bool arrivalIsParentSystem, const std::string& vehicleName) {
+MissionTimelineData MissionTimeline::Build(const MissionPlan& plan, const std::string& landingBody, bool arrivalIsParentSystem,
+                                           const std::string& vehicleName) {
     MissionTimelineData tl;
     if (!plan.valid) return tl;
     tl.valid = true;
@@ -58,8 +58,9 @@ MissionTimelineData MissionTimeline::Build(const MissionPlan& plan, const std::s
     if (plan.earthMoonMission)
         add(L + tenMin, "TLI", fmt("Trans-lunar injection burn complete: %.2f km/s from 200 km LEO", plan.dvFromLeoKms));
     else
-        add(L + tenMin, "TMI", fmt("Interplanetary injection burn complete: %.2f km/s from 200 km LEO (C3 %.1f km2/s2)",
-                                   plan.dvFromLeoKms, plan.vInfDepartureKms * plan.vInfDepartureKms));
+        add(L + tenMin, "TMI",
+            fmt("Interplanetary injection burn complete: %.2f km/s from 200 km LEO (C3 %.1f km2/s2)", plan.dvFromLeoKms,
+                plan.vInfDepartureKms * plan.vInfDepartureKms));
     if (plan.transferDays > 40.0) {
         add(L + 15.0, "TCM-1", "Trajectory correction slot 1 (nominal trajectory: 0 m/s required)");
         add(A - 10.0, "TCM-F", "Final trajectory correction slot (nominal: 0 m/s)");
@@ -106,8 +107,7 @@ MissionTimelineData MissionTimeline::Build(const MissionPlan& plan, const std::s
         if (tl.landing.valid) {
             tl.hasLanding = true;
             tl.landingStartDay = landingStart;
-            for (const auto& e : tl.landing.events)
-                add(landingStart + e.t / 86400.0, "EDL", e.text, true);
+            for (const auto& e : tl.landing.events) add(landingStart + e.t / 86400.0, "EDL", e.text, true);
         } else {
             tl.landingNote = tl.landing.message;
         }
@@ -134,7 +134,8 @@ MissionPhase MissionTimeline::PhaseAt(const MissionTimelineData& tl, const Missi
 }
 
 const TimelineEvent* MissionTimeline::NextEvent(const MissionTimelineData& tl, double day) {
-    for (const auto& e : tl.events) if (e.day > day + 1e-9) return &e;
+    for (const auto& e : tl.events)
+        if (e.day > day + 1e-9) return &e;
     return nullptr;
 }
 
@@ -148,31 +149,44 @@ std::string MissionTimeline::FormatMET(double s) {
     return buf;
 }
 
-double MissionTimeline::LightTimeSec(const glm::dvec3& a, const glm::dvec3& b) {
-    return glm::length(a - b) * kAuKm / kCKms;
-}
+double MissionTimeline::LightTimeSec(const glm::dvec3& a, const glm::dvec3& b) { return glm::length(a - b) * kAuKm / kCKms; }
 
 bool MissionTimeline::WriteCruiseCsv(const MissionPlan& plan, const std::string& path, double stepDays) {
     if (!plan.valid || plan.earthMoonMission || stepDays <= 0.0) return false;
     std::ofstream out(path);
     if (!out) return false;
-    KeplerOrbit transfer(plan.transferElements);
-    out << "# ExoSim cruise trajectory - " << plan.targetName << " (idealized Hohmann transfer, two-body)\n";
+    out << "# ExoSim cruise trajectory - " << plan.targetName << " (" << plan.method << ", two-body)\n";
     out << "# Heliocentric ecliptic J2000. Position AU, velocity km/s (central difference).\n";
-    out << "day_since_j2000,utc_date,met_days,x_au,y_au,z_au,vx_kms,vy_kms,vz_kms,sun_range_au,speed_kms,visviva_speed_kms\n";
-    const double aKm = plan.transferElements.semiMajorAxisAU * kAuKm;
+    out << "day_since_j2000,utc_date,met_days,x_au,y_au,z_au,vx_kms,vy_kms,vz_kms,sun_range_au,speed_kms\n";
     char line[512];
-    for (double t = 0.0; t <= plan.transferDays + 1e-9; t += stepDays) {
-        double tt = std::min(t, plan.transferDays);
-        glm::dvec3 p = transfer.positionAtTime(tt);
+    const int samples = static_cast<int>(std::floor(plan.transferDays / stepDays + 1e-9));
+    for (int i = 0; i <= samples; ++i) {
+        double day = plan.launchDay + std::min(i * stepDays, plan.transferDays);
+        glm::dvec3 p = plan.positionAt(day);
         const double h = 1e-3; // days
-        glm::dvec3 v = (transfer.positionAtTime(tt + h) - transfer.positionAtTime(tt - h)) * (kAuKm / (2.0 * h * 86400.0));
-        double r = glm::length(p);
-        double vv = std::sqrt(kMuSun * (2.0 / (r * kAuKm) - 1.0 / aKm));
-        std::snprintf(line, sizeof(line), "%.4f,%s,%.4f,%.9f,%.9f,%.9f,%.6f,%.6f,%.6f,%.9f,%.6f,%.6f\n",
-                      plan.launchDay + tt, MissionPlanner::DayToCalendar(plan.launchDay + tt).c_str(), tt,
-                      p.x, p.y, p.z, v.x, v.y, v.z, r, glm::length(v), vv);
+        glm::dvec3 v = (plan.positionAt(day + h) - plan.positionAt(day - h)) * (kAuKm / (2.0 * h * 86400.0));
+        std::snprintf(line, sizeof(line), "%.4f,%s,%.4f,%.9f,%.9f,%.9f,%.6f,%.6f,%.6f,%.9f,%.6f\n", day,
+                      MissionPlanner::DayToCalendar(day).c_str(), day - plan.launchDay, p.x, p.y, p.z, v.x, v.y, v.z,
+                      glm::length(p), glm::length(v));
         out << line;
     }
     return static_cast<bool>(out);
+}
+
+void MissionTimeline::AddFlybyEvents(MissionTimelineData& tl, const FlybyPlan& fp) {
+    char buf[256];
+    for (const FlybyEncounter& f : fp.flybys) {
+        std::snprintf(buf, sizeof(buf), "Enter %s's sphere of influence (r = %.2f million km)", f.body.c_str(),
+                      f.soiRadiusKm / 1e6);
+        tl.events.push_back({f.soiEntryDay, "SOI-IN", buf, false});
+        std::snprintf(
+            buf, sizeof(buf), "%s flyby: altitude %.0f km, v_inf %.2f -> %.2f km/s, turn %.1f deg%s", f.body.c_str(),
+            f.periapsisAltitudeKm, f.vInfInKms, f.vInfOutKms, f.turnAngleDeg,
+            f.poweredDvKms > 0.005 ? (", powered " + std::to_string(std::lround(f.poweredDvKms * 1000.0)) + " m/s").c_str() : "");
+        tl.events.push_back({f.day, "FLYBY", buf, false});
+        std::snprintf(buf, sizeof(buf), "Exit %s's sphere of influence", f.body.c_str());
+        tl.events.push_back({f.soiExitDay, "SOI-OUT", buf, false});
+    }
+    std::stable_sort(tl.events.begin(), tl.events.end(),
+                     [](const TimelineEvent& a, const TimelineEvent& b) { return a.day < b.day; });
 }

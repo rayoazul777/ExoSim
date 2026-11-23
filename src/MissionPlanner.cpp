@@ -1,56 +1,63 @@
 #include "MissionPlanner.h"
+#include "Lambert.h"
+#include "Porkchop.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
 
 namespace {
-    constexpr double kPi = 3.14159265358979323846;
-    constexpr double kMuSun = 1.32712440018e11;   // km^3/s^2
-    constexpr double kMuEarth = 398600.4418;      // km^3/s^2
-    constexpr double kAuKm = 1.495978707e8;
-    constexpr double kLeoRadiusKm = 6378.137 + 200.0;
-    constexpr double kMoonDistanceKm = 384400.0;
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kMuSun = 1.32712440018e11; // km^3/s^2
+constexpr double kMuEarth = 398600.4418; // km^3/s^2
+constexpr double kAuKm = 1.495978707e8;
+constexpr double kLeoRadiusKm = 6378.137 + 200.0;
+constexpr double kMoonDistanceKm = 384400.0;
 
-    double wrapPi(double x) {
-        x = std::fmod(x + kPi, 2.0 * kPi);
-        if (x < 0.0) x += 2.0 * kPi;
-        return x - kPi;
-    }
-
-    double angleXY(const glm::dvec3& p) { return std::atan2(p.y, p.x); }
-    double radiusXY(const glm::dvec3& p) { return std::sqrt(p.x * p.x + p.y * p.y); }
-
-    // Half the period of an ellipse with semi-major axis (r1+r2)/2, in days.
-    double hohmannDays(double r1AU, double r2AU) {
-        double aKm = 0.5 * (r1AU + r2AU) * kAuKm;
-        return kPi * std::sqrt(aKm * aKm * aKm / kMuSun) / 86400.0;
-    }
-
-    struct WindowEval { double error; double transferDays; double r1, r2; double earthAngle; };
-
-    // Phase error for launching on `day`: how far the target will be from
-    // the transfer's arrival point (180 deg from Earth's launch position)
-    // when the spacecraft gets there. A launch window is where this is 0.
-    // r2 is refined iteratively from the target's actual position at
-    // arrival, so eccentric orbits (Mars, Mercury) are handled properly.
-    WindowEval evaluate(const KeplerOrbit& earth, const KeplerOrbit& target, double targetA, double day) {
-        glm::dvec3 e = earth.positionAtTime(day);
-        double r1 = radiusXY(e);
-        double r2 = targetA;
-        double T = hohmannDays(r1, r2);
-        for (int i = 0; i < 4; ++i) {
-            r2 = radiusXY(target.positionAtTime(day + T));
-            T = hohmannDays(r1, r2);
-        }
-        glm::dvec3 t = target.positionAtTime(day + T);
-        double err = wrapPi(angleXY(t) - angleXY(e) - kPi);
-        return {err, T, r1, r2, angleXY(e)};
-    }
+double wrapPi(double x) {
+    x = std::fmod(x + kPi, 2.0 * kPi);
+    if (x < 0.0) x += 2.0 * kPi;
+    return x - kPi;
 }
 
-MissionPlan MissionPlanner::PlanHohmann(const OrbitalElements& earthEl, const OrbitalElements& targetEl,
-                                        double fromDay, const std::string& targetName) {
+double angleXY(const glm::dvec3& p) { return std::atan2(p.y, p.x); }
+double radiusXY(const glm::dvec3& p) { return std::sqrt(p.x * p.x + p.y * p.y); }
+
+// Half the period of an ellipse with semi-major axis (r1+r2)/2, in days.
+double hohmannDays(double r1AU, double r2AU) {
+    double aKm = 0.5 * (r1AU + r2AU) * kAuKm;
+    return kPi * std::sqrt(aKm * aKm * aKm / kMuSun) / 86400.0;
+}
+
+struct WindowEval {
+    double error;
+    double transferDays;
+    double r1, r2;
+    double earthAngle;
+};
+
+// Phase error for launching on `day`: how far the target will be from
+// the transfer's arrival point (180 deg from Earth's launch position)
+// when the spacecraft gets there. A launch window is where this is 0.
+// r2 is refined iteratively from the target's actual position at
+// arrival, so eccentric orbits (Mars, Mercury) are handled properly.
+WindowEval evaluate(const KeplerOrbit& earth, const KeplerOrbit& target, double targetA, double day) {
+    glm::dvec3 e = earth.positionAtTime(day);
+    double r1 = radiusXY(e);
+    double r2 = targetA;
+    double T = hohmannDays(r1, r2);
+    for (int i = 0; i < 4; ++i) {
+        r2 = radiusXY(target.positionAtTime(day + T));
+        T = hohmannDays(r1, r2);
+    }
+    glm::dvec3 t = target.positionAtTime(day + T);
+    double err = wrapPi(angleXY(t) - angleXY(e) - kPi);
+    return {err, T, r1, r2, angleXY(e)};
+}
+} // namespace
+
+MissionPlan MissionPlanner::PlanHohmann(const OrbitalElements& earthEl, const OrbitalElements& targetEl, double fromDay,
+                                        const std::string& targetName) {
     MissionPlan plan;
     plan.targetName = targetName;
     plan.arrivalBodyName = targetName;
@@ -64,7 +71,9 @@ MissionPlan MissionPlanner::PlanHohmann(const OrbitalElements& earthEl, const Or
     // which is also a sign change but not a real window.
     double scanLimit = std::max(2.0 * plan.synodicPeriodDays, 800.0);
     WindowEval prev = evaluate(earth, target, targetEl.semiMajorAxisAU, fromDay);
-    for (double d = fromDay + 1.0; d <= fromDay + scanLimit; d += 1.0) {
+    const int scanDays = static_cast<int>(scanLimit);
+    for (int step = 1; step <= scanDays; ++step) {
+        const double d = fromDay + step;
         WindowEval cur = evaluate(earth, target, targetEl.semiMajorAxisAU, d);
         bool signChange = (prev.error <= 0.0 && cur.error > 0.0) || (prev.error >= 0.0 && cur.error < 0.0);
         if (signChange && std::fabs(cur.error) < 1.5 && std::fabs(prev.error) < 1.5) {
@@ -73,7 +82,12 @@ MissionPlan MissionPlanner::PlanHohmann(const OrbitalElements& earthEl, const Or
             for (int it = 0; it < 30; ++it) {
                 double mid = 0.5 * (lo + hi);
                 double midErr = evaluate(earth, target, targetEl.semiMajorAxisAU, mid).error;
-                if ((loErr <= 0.0) == (midErr <= 0.0)) { lo = mid; loErr = midErr; } else { hi = mid; }
+                if ((loErr <= 0.0) == (midErr <= 0.0)) {
+                    lo = mid;
+                    loErr = midErr;
+                } else {
+                    hi = mid;
+                }
             }
             double launch = 0.5 * (lo + hi);
             WindowEval w = evaluate(earth, target, targetEl.semiMajorAxisAU, launch);
@@ -93,8 +107,10 @@ MissionPlan MissionPlanner::PlanHohmann(const OrbitalElements& earthEl, const Or
             double vT2 = std::sqrt(kMuSun * (2.0 / r2 - 1.0 / a));
             plan.vInfDepartureKms = std::fabs(vT1 - vCirc1);
             plan.vInfArrivalKms = std::fabs(vCirc2 - vT2);
-            plan.dvFromLeoKms = std::sqrt(plan.vInfDepartureKms * plan.vInfDepartureKms + 2.0 * kMuEarth / kLeoRadiusKm)
-                                - std::sqrt(kMuEarth / kLeoRadiusKm);
+            plan.dvFromLeoKms = std::sqrt(plan.vInfDepartureKms * plan.vInfDepartureKms + 2.0 * kMuEarth / kLeoRadiusKm) -
+                                std::sqrt(kMuEarth / kLeoRadiusKm);
+            plan.c3 = plan.vInfDepartureKms * plan.vInfDepartureKms;
+            plan.transferAngleDeg = 180.0;
 
             // Transfer ellipse in the ecliptic: periapsis at Earth's launch
             // direction when heading outward; apoapsis there when inward.
@@ -155,4 +171,60 @@ double MissionPlanner::NowDaysSinceJ2000() {
     using namespace std::chrono;
     double unixSeconds = static_cast<double>(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
     return unixSeconds / 86400.0 - 10957.5;
+}
+
+MissionPlan MissionPlanner::PlanLambert(const OrbitalElements& earthEl, const OrbitalElements& targetEl, double launchDay,
+                                        double tofDays, const std::string& targetName) {
+    MissionPlan plan;
+    plan.targetName = targetName;
+    plan.arrivalBodyName = targetName;
+    plan.method = "Lambert";
+    KeplerOrbit earth(earthEl), target(targetEl);
+    double pE = earthEl.periodDays, pT = targetEl.periodDays;
+    plan.synodicPeriodDays = (std::fabs(1.0 / pE - 1.0 / pT) > 1e-12) ? 1.0 / std::fabs(1.0 / pE - 1.0 / pT) : 0.0;
+
+    TransferPoint p = Porkchop::Evaluate(earth, target, launchDay, tofDays);
+    if (!p.ok) return plan;
+    OrbitalElements t = Orbit::ElementsFromState(p.r1, p.v1, Orbit::kMuSunAU3Day2);
+    if (t.semiMajorAxisAU <= 0.0) return plan; // hyperbolic heliocentric transfer: not representable
+    plan.valid = true;
+    plan.launchDay = launchDay;
+    plan.transferDays = tofDays;
+    plan.arrivalDay = launchDay + tofDays;
+    plan.r1AU = glm::length(p.r1);
+    plan.r2AU = glm::length(target.positionAtTime(plan.arrivalDay));
+    plan.outbound = plan.r2AU > plan.r1AU;
+    plan.vInfDepartureKms = p.vInfDepartureKms;
+    plan.vInfArrivalKms = p.vInfArrivalKms;
+    plan.dvFromLeoKms = p.dvFromLeoKms;
+    plan.c3 = p.c3;
+    plan.transferAngleDeg = p.transferAngleDeg;
+    plan.inclinationDeg = t.inclinationDeg;
+    plan.transferElements = t;
+    plan.legs.push_back({launchDay, tofDays, p.r1, p.v1});
+    return plan;
+}
+
+MissionPlan MissionPlanner::PlanOptimal(const OrbitalElements& earthEl, const OrbitalElements& targetEl, double fromDay,
+                                        const std::string& targetName) {
+    MissionPlan hohmann = PlanHohmann(earthEl, targetEl, fromDay, targetName);
+    if (!hohmann.valid) return hohmann;
+    KeplerOrbit earth(earthEl), target(targetEl);
+    const double halfWidth = std::clamp(0.12 * hohmann.synodicPeriodDays, 20.0, 120.0);
+    const double l0 = std::max(fromDay, hohmann.launchDay - halfWidth), l1 = hohmann.launchDay + halfWidth;
+    const double t0 = 0.55 * hohmann.transferDays, t1 = 1.45 * hohmann.transferDays;
+    PorkchopGrid g = Porkchop::Compute(earth, target, l0, l1, 48, t0, t1, 48);
+    if (g.bestIndex < 0) return hohmann;
+    TransferPoint best = Porkchop::Refine(earth, target, g.cells[static_cast<size_t>(g.bestIndex)], fromDay);
+    MissionPlan plan = PlanLambert(earthEl, targetEl, best.launchDay, best.tofDays, targetName);
+    return plan.valid ? plan : hohmann;
+}
+
+glm::dvec3 MissionPlan::positionAt(double day) const {
+    const double d = std::clamp(day, launchDay, arrivalDay);
+    if (legs.empty()) return KeplerOrbit(transferElements).positionAtTime(d - launchDay);
+    for (const TrajectoryLeg& leg : legs)
+        if (d <= leg.startDay + leg.durationDays || &leg == &legs.back())
+            return Orbit::Propagate(leg.r0, leg.v0, std::clamp(d - leg.startDay, 0.0, leg.durationDays), Orbit::kMuSunAU3Day2);
+    return legs.back().r0;
 }

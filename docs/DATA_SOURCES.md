@@ -21,7 +21,10 @@ the code keeps them separate.
 | Star positions, magnitudes, colors, proper motions, parallaxes | *The Hipparcos and Tycho Catalogues*, ESA SP-1200 (1997); Perryman et al. 1997, A&A 323, L49. VizieR table `I/239/hip_main` | CDS VizieR TAP | https://tapvizier.cds.unistra.fr/adql/ |
 | Double-star separations | Washington Double Star Catalog: Mason et al. 2001, AJ 122, 3466. VizieR table `B/wds/wds` | CDS VizieR TAP | as above |
 | VizieR service | Ochsenbein, Bauer & Marcout 2000, A&AS 143, 23 | — | https://vizier.cds.unistra.fr |
-| Sol planets' orbital elements (J2000) | E. M. Standish, *Keplerian Elements for Approximate Positions of the Major Planets*, JPL Solar System Dynamics | Hand-entered in `Dataset::DemoSolarSystem` | https://ssd.jpl.nasa.gov/planets/approx_pos.html |
+| Sol planets' orbital elements (J2000) and secular rates | E. M. Standish, *Keplerian Elements for Approximate Positions of the Major Planets*, JPL Solar System Dynamics, Table 1 (1800–2050) | Hand-entered in `Dataset::DemoSolarSystem` | https://ssd.jpl.nasa.gov/planets/approx_pos.html |
+| Reference planet positions for validation (1950–2050) | JPL Horizons, DE441 ephemeris (Park et al. 2021, AJ 161, 105) | `tools/fetch_horizons.py` → `tests/data/horizons_planets_1950_2050.csv` | https://ssd.jpl.nasa.gov/horizons/ |
+| Milky Way model parameters (illustrative) | Spiral-arm crossings and pitch: Reid et al. 2019, ApJ 885, 131. Galactic Center distance R0 = 8.178 kpc: GRAVITY Collaboration 2019, A&A 625, L10. Sun's height 20.8 pc: Bennett & Bovy 2019, MNRAS 482, 1417. Bar, bulge and disk scale lengths: Bland-Hawthorn & Gerhard 2016, ARA&A 54, 529 | Constants in `galaxy/GalaxyModel.cpp` | — |
+| Galactic coordinate system | IAU 1958 definition, J2000 pole (RA 192.85948°, Dec 27.12825°, l_NCP 122.93192°) | Constants in `galaxy/GalaxyModel.cpp` | Liu, Zhu & Zhang 2011, A&A 526, A16 |
 | Planet densities, radii, masses; ring radii | NASA NSSDCA planetary and ring fact sheets | Hand-entered | https://nssdc.gsfc.nasa.gov/planetary/factsheet/ |
 | Moon periods, inclinations, eccentricities, radii | Standard published values (JPL SSD satellite tables / NSSDCA fact sheets) | Hand-entered, rounded | https://ssd.jpl.nasa.gov/sats/ |
 
@@ -55,6 +58,9 @@ EPH/CLS tests only cover part of them.
 
 | Item | Value / method | Reference |
 |---|---|---|
+| Lambert's problem (universal variables), Stumpff functions | Bisection on z; single revolution | Curtis, *Orbital Mechanics for Engineering Students*, Algorithm 5.2 / Example 5.2 |
+| Sphere of influence | Laplace: r = a (m/M)^(2/5) | Bate, Mueller & White |
+| Teff → B–V (for map colors) | T = 4600 (1/(0.92 BV + 1.7) + 1/(0.92 BV + 0.62)) | Ballesteros 2012, EPL 97, 34008 |
 | Kepler's equation, vis-viva, Hohmann transfer, patched conics | Standard two-body formulas | Curtis, *Orbital Mechanics for Engineering Students*; Vallado, *Fundamentals of Astrodynamics and Applications*; Bate, Mueller & White, *Fundamentals of Astrodynamics* |
 | Sun's gravitational parameter μ☉ | 1.32712440018 × 10¹¹ km³/s² | IAU / JPL |
 | Earth's gravitational parameter μ⊕ | 398,600.4418 km³/s² | WGS 84 |

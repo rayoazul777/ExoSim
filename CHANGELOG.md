@@ -4,6 +4,67 @@ Versions 0.1–0.5 were reconstructed from the development history (there
 were no release tags at the time). The README describes only the
 **current** state; historical behavior lives here.
 
+## 0.8.0: Trajectory design, validation and the Milky Way map
+
+**Added**
+- **Lambert trajectory design.** Universal-variable Lambert solver,
+  state↔elements conversion and universal Kepler propagation (hyperbolic
+  legs included). Missions now default to the optimal 3-D Lambert
+  transfer between the planets' real positions; Hohmann remains
+  selectable as "Trajectory model".
+- **Porkchop plots.** A 100 × 70 launch/arrival grid of C3, departure Δv
+  from LEO, arrival v∞ or total cost, with contours and Type I/II lobes.
+  Hover for details, click a cell to fly that transfer.
+- **Gravity-assist chains.** Patched-conic powered flybys: turn limit
+  sin(δ/2) = 1/e, periapsis burn when the turn falls short, Laplace
+  sphere of influence, and SOI-IN / FLYBY / SOI-OUT events on the
+  timeline. Five sequences (EJS, EJU, EJN, EJP, EVEJ); the optimizer
+  finds the Voyager (1977-09-05) and New Horizons (2006-01-19) launch
+  dates.
+- **JPL Horizons validation.** 8 planets × 51 epochs, 1950–2050, against
+  DE441: error envelopes in `VALIDATION.md` (`--horizons-table`).
+- **Recorded-input replay.** `--record`, `--replay` and
+  `--verify-replay`, plus Record and Replay controls in the app. A
+  recording is tick-stamped commands in JSON lines plus a final state
+  hash; playback reproduces the session bit for bit.
+- **Milky Way map.** Zoom from 1 pc to 80 kpc in a top-down map or a
+  3-D view: 4,668 exoplanet hosts at their real positions, Hipparcos
+  stars within 1 kpc, and an illustrative disk/bar/bulge/arm model with
+  distance rings and Galactic longitude marks. Search, hover and click
+  hosts; "Open system" jumps to the simulation. `--galaxy`,
+  `--galaxy-3d`, `--galaxy-distance <pc>`.
+- **Configuration file** `exosim.json` (window, paths, speed, logging),
+  validated, with an example `exosim.example.json`.
+- **Structured logging.** Levels and components, readable on the
+  console, plus an optional JSON-lines log file.
+- **Static analysis in CI.** clang-format and clang-tidy (warnings as
+  errors) gate the Linux and Windows jobs.
+- 94 new automated checks (LAM, GA, EPH-H, ENG, GAL): 181 in total.
+
+**Changed**
+- **`main.cpp` split** into `sim/` (state, commands, replay, catalog),
+  `sky/`, `galaxy/`, `app/` (loop, input, view state), `scene/` (one per
+  view) and `ui/` (panels). The core builds as `ExoSimCore` with no
+  OpenGL. 12 reference views were pixel-identical before and after the
+  split.
+- **Ephemeris:** Standish Table 1 secular rates are now applied. Error
+  over 1950–2050 drops 2–63× for the inner planets. Near 2025, Jupiter
+  and Saturn opposition times shift from 12/31 min to 69/153 min, which
+  is the cost of a century-wide fit; see `VALIDATION.md`.
+- Cruise CSV export uses the actual trajectory legs; the vis-viva column
+  was removed because it doesn't apply to multi-leg flyby trajectories.
+
+**Fixed**
+- The CI workflow only triggered on `main`, but the repository's default
+  branch is `master`, so pushes never ran CI. It now triggers on both.
+- Screenshots now report a failed write (a missing folder, say) instead
+  of claiming success, and the exit code reflects it.
+- Found by clang-tidy: four floating-point loop counters, an incorrect
+  `(int)(x + 0.5)` rounding, and an empty `catch` that hid a parse error.
+- `fetch_exoplanets.py` now also fetches `sy_dist` from `stellarhosts`.
+  107 hosts, TRAPPIST-1 among them, have no distance in the `ps` default
+  parameter set; the map falls back to the `stellarhosts` value.
+
 ## 0.7.0: Mission operations and landing simulation
 
 **Added**

@@ -11,7 +11,7 @@ public:
     void resize(int width, int height);
     void shutdown();
 
-    void beginScene();               // binds offscreen FBO, clears it
+    void beginScene(); // binds offscreen FBO, clears it
     void endSceneAndPresent(float timeSeconds); // draws fullscreen quad with CRT shader
 
 private:

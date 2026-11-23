@@ -37,27 +37,30 @@ enum class DescentPhase { Entry, Parachute, PoweredDescent, TerminalDescent, Lan
 const char* DescentPhaseName(DescentPhase p);
 
 struct LandingSample {
-    double t = 0.0;               // seconds since entry interface / descent start
+    double t = 0.0; // seconds since entry interface / descent start
     double altitudeM = 0.0;
-    double downrangeM = 0.0;      // surface distance travelled from the start point
-    double angleRad = 0.0;        // the same, as an angle around the body
+    double downrangeM = 0.0; // surface distance travelled from the start point
+    double angleRad = 0.0; // the same, as an angle around the body
     double speedMs = 0.0;
-    double verticalMs = 0.0;      // + up
+    double verticalMs = 0.0; // + up
     double horizontalMs = 0.0;
-    double accelG = 0.0;          // sensed (non-gravitational) acceleration, Earth g
+    double accelG = 0.0; // sensed (non-gravitational) acceleration, Earth g
     double dynPressurePa = 0.0;
-    double heatFluxWcm2 = 0.0;    // Sutton-Graves stagnation-point estimate
+    double heatFluxWcm2 = 0.0; // Sutton-Graves stagnation-point estimate
     double massKg = 0.0;
     double propellantKg = 0.0;
-    double throttle = 0.0;        // 0..1 of max thrust
+    double throttle = 0.0; // 0..1 of max thrust
     double thrustDirX = 0.0, thrustDirY = 0.0; // thrust direction in the local (horizontal, up) frame
-    double rangeToTargetM = 0.0;  // powered phases only
+    double rangeToTargetM = 0.0; // powered phases only
     DescentPhase phase = DescentPhase::Entry;
     bool chuteDeployed = false;
     bool heatShieldAttached = false;
 };
 
-struct LandingEvent { double t; std::string text; };
+struct LandingEvent {
+    double t;
+    std::string text;
+};
 
 enum class LimitStatus { Green, Yellow, Red, NotApplicable };
 struct LimitCheck {
@@ -75,15 +78,15 @@ struct LandingConfig {
 struct LandingResult {
     bool valid = false;
     std::string bodyName;
-    std::string profileName;      // e.g. "Mars EDL (Perseverance-class)"
-    std::string message;          // why invalid, or notes
+    std::string profileName; // e.g. "Mars EDL (Perseverance-class)"
+    std::string message; // why invalid, or notes
     double bodyRadiusM = 0.0;
     bool atmosphericEntry = false;
     bool powered = false;
     double entrySpeedMs = 0.0;
     double entryAltitudeM = 0.0;
     double flightPathAngleDeg = 0.0;
-    double targetAngleRad = 0.0;  // guidance target, as an angle from the start
+    double targetAngleRad = 0.0; // guidance target, as an angle from the start
     double durationS = 0.0;
     double touchdownSpeedMs = 0.0;
     double missDistanceM = 0.0;

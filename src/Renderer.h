@@ -27,8 +27,7 @@ public:
     // Draws all orbit rings + current planet positions.
     // viewProj: combined camera view*projection matrix.
     // planetPositions: current position (AU) per planet, same order as setOrbitPath calls.
-    void render(const glm::mat4& viewProj,
-                const std::vector<glm::vec3>& planetPositions);
+    void render(const glm::mat4& viewProj, const std::vector<glm::vec3>& planetPositions);
 
     // Draws a single planet as a CRT-style wireframe globe (latitude/
     // longitude grid lines over a unit sphere, transformed by `model`).
@@ -48,14 +47,12 @@ public:
     // and alpha. Builds and tears down a scratch buffer each call - fine
     // for the handful of these drawn per frame, avoids persistent buffer
     // bookkeeping for something this infrequent.
-    void renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                              const glm::vec3& color, float alpha);
+    void renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color,
+                             float alpha);
     // Same, as an open polyline (no closing segment) ...
-    void renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                         const glm::vec3& color, float alpha);
+    void renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color, float alpha);
     // ... and as independent segments (points taken in pairs).
-    void renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                            const glm::vec3& color, float alpha);
+    void renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color, float alpha);
 
     // Landing view: when on, renderPlanetSurface draws a high-resolution
     // spherical cap (centred on +Z, 0.6 rad radius, rings packed densely
@@ -63,6 +60,14 @@ public:
     // smooth and correctly placed metres from the camera. The whole-sphere
     // mesh's flat facets sag kilometres below the true surface there.
     void setSurfaceCapMode(bool on) { m_surfaceCapMode = on; }
+
+    // Galaxy map: world-space point clouds in up to kMaxPointClouds slots
+    // (uploaded once, drawn every frame). Size is in pixels; sizeScale and
+    // alphaScale apply per draw. Additive blending suits glowing star fields.
+    static constexpr int kMaxPointClouds = 4;
+    void uploadPointCloud(int slot, const std::vector<glm::vec3>& positions, const std::vector<glm::vec4>& rgba,
+                          const std::vector<float>& sizes);
+    void renderPointCloud(int slot, const glm::mat4& viewProj, float sizeScale, float alphaScale, bool additive);
 
     // Draws a SOLID-shaded planet surface: a procedurally generated,
     // stylized approximation (banded clouds for gas/ice giants, a
@@ -79,20 +84,17 @@ public:
     // real-appearance rendering path (secondary-color bands, continents,
     // polar caps, a great-spot feature, haze) instead of the generic
     // classification-driven look, and planetType/baseColor are ignored.
-    void renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model,
-                              const glm::vec3& viewPosWorld, int planetType,
-                              const glm::vec3& baseColor, const glm::vec3& accentColor,
-                              float timeSeconds, float seed,
-                              const PlanetAppearance* knownAppearance = nullptr);
+    void renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& viewPosWorld, int planetType,
+                             const glm::vec3& baseColor, const glm::vec3& accentColor, float timeSeconds, float seed,
+                             const PlanetAppearance* knownAppearance = nullptr);
 
     // Draws a planet's rings in the model's local XZ plane from REAL band
     // radii (NASA ring fact sheets; see SolarSystemAppearance), in units of
     // the planet's radius. Gaps like the Cassini Division fall at their real
     // radii because they're simply where no band is. Only the fine ringlet
     // texture within each band is stylized. Up to 16 bands.
-    void renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
-                            const std::vector<RingBand>& bands,
-                            const glm::vec3& color, float seed);
+    void renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model, const std::vector<RingBand>& bands,
+                           const glm::vec3& color, float seed);
 
     // Fractal octave count for the surface shader - raise it as the camera
     // nears the surface so zooming reveals new detail (see kSurfaceFS).
@@ -111,17 +113,16 @@ public:
     // the camera rotates, not as it orbits around a point. galacticLat/
     // LonDeg orient the galactic band using the current system's real
     // galactic coordinates when known (0/0 otherwise - see Dataset.h).
-    void renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds,
-                       float galacticLatDeg, float galacticLonDeg, float seed);
+    void renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds, float galacticLatDeg, float galacticLonDeg,
+                      float seed);
 
     // Uploads the real Hipparcos star catalog once (call after init(),
     // whenever the catalog is loaded/changed - NOT every frame). Each
     // parallel array must be the same length: unit direction (from real
     // RA/Dec), RGB color (from real B-V color index), and point size
     // (from real visual magnitude) - see main.cpp for the conversions.
-    void setStarCatalog(const std::vector<glm::vec3>& directions,
-                         const std::vector<glm::vec3>& colors,
-                         const std::vector<float>& pointSizes);
+    void setStarCatalog(const std::vector<glm::vec3>& directions, const std::vector<glm::vec3>& colors,
+                        const std::vector<float>& pointSizes);
 
     // Draws the real star catalog as point sprites. `viewProjRot` is
     // proj * rotation-only view (the forward transform - NOT inverted,
@@ -135,7 +136,10 @@ private:
     GLuint m_lineShader = 0;
     GLuint m_pointShader = 0;
 
-    struct OrbitBuffer { GLuint vao = 0, vbo = 0; GLsizei count = 0; };
+    struct OrbitBuffer {
+        GLuint vao = 0, vbo = 0;
+        GLsizei count = 0;
+    };
     std::vector<OrbitBuffer> m_orbits;
 
     GLuint m_pointsVao = 0, m_pointsVbo = 0;
@@ -149,6 +153,9 @@ private:
     GLsizei m_solidSphereIndexCount = 0;
     GLuint m_capVao = 0, m_capVbo = 0, m_capEbo = 0;
     GLsizei m_capIndexCount = 0;
+    GLuint m_cloudShader = 0;
+    GLuint m_cloudVao[kMaxPointClouds] = {}, m_cloudVbo[kMaxPointClouds] = {};
+    GLsizei m_cloudCount[kMaxPointClouds] = {};
     bool m_surfaceCapMode = false;
     GLuint m_surfaceShader = 0;
     float m_surfaceDetailOctaves = 5.0f;
@@ -172,8 +179,8 @@ private:
     void buildSphereWireframe();
     void buildSolidSphereMesh();
     void buildSurfaceCapMesh();
-    void drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                          const glm::vec3& color, float alpha, unsigned int mode);
+    void drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color, float alpha,
+                          unsigned int mode);
     void buildRingMesh();
     void buildSkyboxQuad();
 

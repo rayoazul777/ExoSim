@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "Log.h"
 #include <iostream>
 #include <cmath>
 #include <algorithm>
@@ -513,6 +514,35 @@ void main() {
 }
 )";
 
+// World-space point cloud (galaxy map): position, RGBA and pixel size per point.
+const char* kCloudVS = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec4 aColor;
+layout(location = 2) in float aSize;
+uniform mat4 uViewProj;
+uniform float uSizeScale;
+uniform float uAlpha;
+out vec4 vColor;
+void main() {
+    gl_Position = uViewProj * vec4(aPos, 1.0);
+    gl_PointSize = max(aSize * uSizeScale, 1.0);
+    vColor = vec4(aColor.rgb, aColor.a * uAlpha);
+}
+)";
+
+const char* kCloudFS = R"(
+#version 330 core
+in vec4 vColor;
+out vec4 FragColor;
+void main() {
+    vec2 c = gl_PointCoord - vec2(0.5);
+    float d = dot(c, c);
+    if (d > 0.25) discard;
+    FragColor = vec4(vColor.rgb, vColor.a * (1.0 - smoothstep(0.08, 0.25, d)));
+}
+)";
+
 } // namespace
 
 GLuint Renderer::compileShader(GLenum type, const char* src) {
@@ -524,7 +554,7 @@ GLuint Renderer::compileShader(GLenum type, const char* src) {
     if (!ok) {
         char log[1024];
         glGetShaderInfoLog(s, sizeof(log), nullptr, log);
-        std::cerr << "[Renderer] Shader compile error: " << log << "\n";
+        Log::Warn("renderer", Log::Cat("Shader compile error: ", log));
     }
     return s;
 }
@@ -539,7 +569,7 @@ GLuint Renderer::linkProgram(GLuint vs, GLuint fs) {
     if (!ok) {
         char log[1024];
         glGetProgramInfoLog(p, sizeof(log), nullptr, log);
-        std::cerr << "[Renderer] Program link error: " << log << "\n";
+        Log::Warn("renderer", Log::Cat("Program link error: ", log));
     }
     glDeleteShader(vs);
     glDeleteShader(fs);
@@ -586,8 +616,8 @@ bool Renderer::init() {
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0
-        && m_skyboxShader != 0 && m_starPointShader != 0;
+    return m_lineShader != 0 && m_pointShader != 0 && m_surfaceShader != 0 && m_ringShader != 0 && m_skyboxShader != 0 &&
+           m_starPointShader != 0;
 }
 
 void Renderer::buildSphereWireframe() {
@@ -595,8 +625,8 @@ void Renderer::buildSphereWireframe() {
     // semicircles, stored as GL_LINES (consecutive vertex pairs are
     // one segment each). This is deliberately low-fidelity - it reads
     // as a retro "wireframe globe" rather than a smooth mesh.
-    constexpr int kLatBands = 8;   // horizontal rings (excluding poles)
-    constexpr int kLonBands = 12;  // vertical half-circles
+    constexpr int kLatBands = 8; // horizontal rings (excluding poles)
+    constexpr int kLonBands = 12; // vertical half-circles
     constexpr int kSegs = 32;
     constexpr float kPi = 3.14159265358979323846f;
 
@@ -652,7 +682,7 @@ void Renderer::buildSolidSphereMesh() {
     // Indexed triangle UV-sphere: position (vec3) + UV (vec2) per vertex,
     // interleaved. UV.x = longitude fraction, UV.y = latitude fraction -
     // the surface shader uses these directly for its procedural pattern.
-    constexpr int kRings = 64;   // higher-res silhouette for close-up zoom
+    constexpr int kRings = 64; // higher-res silhouette for close-up zoom
     constexpr int kSegs = 128;
     constexpr float kPi = 3.14159265358979323846f;
 
@@ -684,8 +714,12 @@ void Renderer::buildSolidSphereMesh() {
             unsigned int b = a + rowStride;
             unsigned int c = a + 1;
             unsigned int d = b + 1;
-            indices.push_back(a); indices.push_back(b); indices.push_back(c);
-            indices.push_back(c); indices.push_back(b); indices.push_back(d);
+            indices.push_back(a);
+            indices.push_back(b);
+            indices.push_back(c);
+            indices.push_back(c);
+            indices.push_back(b);
+            indices.push_back(d);
         }
     }
 
@@ -723,8 +757,8 @@ void Renderer::buildSurfaceCapMesh() {
         double u = std::atan2(z, x) / (2.0 * kPi);
         if (u < 0.0) u += 1.0;
         double v = std::acos(std::clamp(y, -1.0, 1.0)) / kPi;
-        verts.insert(verts.end(), {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z),
-                                   static_cast<float>(u), static_cast<float>(v)});
+        verts.insert(verts.end(), {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), static_cast<float>(u),
+                                   static_cast<float>(v)});
     };
     push(0.0, 0.0); // centre
     for (int i = 1; i <= kRings; ++i) {
@@ -732,7 +766,11 @@ void Renderer::buildSurfaceCapMesh() {
         for (int j = 0; j < kSegs; ++j) push(a, 2.0 * kPi * j / kSegs);
     }
     std::vector<unsigned int> idx;
-    for (int j = 0; j < kSegs; ++j) { idx.push_back(0); idx.push_back(1 + j); idx.push_back(1 + (j + 1) % kSegs); }
+    for (int j = 0; j < kSegs; ++j) {
+        idx.push_back(0);
+        idx.push_back(1 + j);
+        idx.push_back(1 + (j + 1) % kSegs);
+    }
     for (int i = 1; i < kRings; ++i) {
         unsigned int r0 = 1 + (i - 1) * kSegs, r1 = 1 + i * kSegs;
         for (int j = 0; j < kSegs; ++j) {
@@ -771,8 +809,12 @@ void Renderer::buildRingMesh() {
         float phi = 2.0f * kPi * static_cast<float>(s) / static_cast<float>(kSegs);
         float dx = std::cos(phi);
         float dy = std::sin(phi);
-        verts.push_back(dx); verts.push_back(dy); verts.push_back(0.0f); // inner
-        verts.push_back(dx); verts.push_back(dy); verts.push_back(1.0f); // outer
+        verts.push_back(dx);
+        verts.push_back(dy);
+        verts.push_back(0.0f); // inner
+        verts.push_back(dx);
+        verts.push_back(dy);
+        verts.push_back(1.0f); // outer
     }
 
     glGenVertexArrays(1, &m_ringVao);
@@ -791,12 +833,7 @@ void Renderer::buildRingMesh() {
 
 void Renderer::buildSkyboxQuad() {
     float verts[] = {
-        -1.f, -1.f,
-         1.f, -1.f,
-         1.f,  1.f,
-        -1.f, -1.f,
-         1.f,  1.f,
-        -1.f,  1.f,
+        -1.f, -1.f, 1.f, -1.f, 1.f, 1.f, -1.f, -1.f, 1.f, 1.f, -1.f, 1.f,
     };
     glGenVertexArrays(1, &m_skyboxVao);
     glGenBuffers(1, &m_skyboxVbo);
@@ -824,6 +861,11 @@ void Renderer::shutdown() {
     glDeleteBuffers(1, &m_capVbo);
     glDeleteBuffers(1, &m_capEbo);
     glDeleteVertexArrays(1, &m_capVao);
+    for (int i = 0; i < kMaxPointClouds; ++i) {
+        if (m_cloudVbo[i]) glDeleteBuffers(1, &m_cloudVbo[i]);
+        if (m_cloudVao[i]) glDeleteVertexArrays(1, &m_cloudVao[i]);
+    }
+    if (m_cloudShader) glDeleteProgram(m_cloudShader);
     glDeleteBuffers(1, &m_ringVbo);
     glDeleteVertexArrays(1, &m_ringVao);
     glDeleteProgram(m_ringShader);
@@ -882,8 +924,7 @@ void Renderer::render(const glm::mat4& viewProj, const std::vector<glm::vec3>& p
     if (!planetPositions.empty()) {
         glBindVertexArray(m_pointsVao);
         glBindBuffer(GL_ARRAY_BUFFER, m_pointsVbo);
-        glBufferData(GL_ARRAY_BUFFER, planetPositions.size() * sizeof(glm::vec3),
-                     planetPositions.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, planetPositions.size() * sizeof(glm::vec3), planetPositions.data(), GL_DYNAMIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
 
@@ -919,11 +960,9 @@ void Renderer::renderStar(const glm::mat4& viewProj, const glm::mat4& model, con
     renderPlanetDetail(viewProj, model, color);
 }
 
-void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model,
-                                    const glm::vec3& viewPosWorld, int planetType,
-                                    const glm::vec3& baseColor, const glm::vec3& accentColor,
-                                    float timeSeconds, float seed,
-                                    const PlanetAppearance* knownAppearance) {
+void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& model, const glm::vec3& viewPosWorld,
+                                   int planetType, const glm::vec3& baseColor, const glm::vec3& accentColor, float timeSeconds,
+                                   float seed, const PlanetAppearance* knownAppearance) {
     glUseProgram(m_surfaceShader);
     glm::mat4 mvp = viewProj * model;
     glUniformMatrix4fv(glGetUniformLocation(m_surfaceShader, "uMVP"), 1, GL_FALSE, &mvp[0][0]);
@@ -940,7 +979,8 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
         const PlanetAppearance& a = *knownAppearance;
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uIsKnownBody"), 1);
         glUniform3f(glGetUniformLocation(m_surfaceShader, "uBaseColor"), a.primaryColor.r, a.primaryColor.g, a.primaryColor.b);
-        glUniform3f(glGetUniformLocation(m_surfaceShader, "uSecondaryColor"), a.secondaryColor.r, a.secondaryColor.g, a.secondaryColor.b);
+        glUniform3f(glGetUniformLocation(m_surfaceShader, "uSecondaryColor"), a.secondaryColor.r, a.secondaryColor.g,
+                    a.secondaryColor.b);
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasContinents"), a.hasContinents ? 1 : 0);
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasPolarCaps"), a.hasPolarCaps ? 1 : 0);
         glUniform1i(glGetUniformLocation(m_surfaceShader, "uHasSpot"), a.hasGreatSpot ? 1 : 0);
@@ -970,9 +1010,8 @@ void Renderer::renderPlanetSurface(const glm::mat4& viewProj, const glm::mat4& m
     glBindVertexArray(0);
 }
 
-void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model,
-                                  const std::vector<RingBand>& bands,
-                                  const glm::vec3& color, float seed) {
+void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& model, const std::vector<RingBand>& bands,
+                                 const glm::vec3& color, float seed) {
     if (bands.empty()) return;
     float inner = bands[0].innerRadius, outer = bands[0].outerRadius;
     std::vector<float> packed;
@@ -1005,8 +1044,8 @@ void Renderer::renderPlanetRings(const glm::mat4& viewProj, const glm::mat4& mod
     glDepthMask(GL_TRUE);
 }
 
-void Renderer::renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds,
-                             float galacticLatDeg, float galacticLonDeg, float seed) {
+void Renderer::renderSkybox(const glm::mat4& invViewProjRotationOnly, float timeSeconds, float galacticLatDeg,
+                            float galacticLonDeg, float seed) {
     glDisable(GL_DEPTH_TEST);
     glUseProgram(m_skyboxShader);
     glUniformMatrix4fv(glGetUniformLocation(m_skyboxShader, "uInvViewProjRot"), 1, GL_FALSE, &invViewProjRotationOnly[0][0]);
@@ -1021,12 +1060,11 @@ void Renderer::renderSkybox(const glm::mat4& invViewProjRotationOnly, float time
     glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::setStarCatalog(const std::vector<glm::vec3>& directions,
-                               const std::vector<glm::vec3>& colors,
-                               const std::vector<float>& pointSizes) {
+void Renderer::setStarCatalog(const std::vector<glm::vec3>& directions, const std::vector<glm::vec3>& colors,
+                              const std::vector<float>& pointSizes) {
     size_t n = directions.size();
     if (colors.size() != n || pointSizes.size() != n) {
-        std::cerr << "[Renderer] setStarCatalog: mismatched array sizes, ignoring.\n";
+        Log::Warn("renderer", Log::Cat("setStarCatalog: mismatched array sizes, ignoring."));
         return;
     }
 
@@ -1069,23 +1107,23 @@ void Renderer::renderStarCatalog(const glm::mat4& viewProjRot) {
     glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                                    const glm::vec3& color, float alpha) {
+void Renderer::renderAuxiliaryRing(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color,
+                                   float alpha) {
     drawScratchLines(viewProj, points, color, alpha, GL_LINE_LOOP);
 }
 
-void Renderer::renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                               const glm::vec3& color, float alpha) {
+void Renderer::renderLineStrip(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color,
+                               float alpha) {
     drawScratchLines(viewProj, points, color, alpha, GL_LINE_STRIP);
 }
 
-void Renderer::renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                                  const glm::vec3& color, float alpha) {
+void Renderer::renderLineSegments(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color,
+                                  float alpha) {
     drawScratchLines(viewProj, points, color, alpha, GL_LINES);
 }
 
-void Renderer::drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points,
-                                const glm::vec3& color, float alpha, unsigned int mode) {
+void Renderer::drawScratchLines(const glm::mat4& viewProj, const std::vector<glm::vec3>& points, const glm::vec3& color,
+                                float alpha, unsigned int mode) {
     if (points.size() < 2) return;
 
     GLuint vao = 0, vbo = 0;
@@ -1106,4 +1144,51 @@ void Renderer::drawScratchLines(const glm::mat4& viewProj, const std::vector<glm
     glBindVertexArray(0);
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
+}
+
+void Renderer::uploadPointCloud(int slot, const std::vector<glm::vec3>& positions, const std::vector<glm::vec4>& rgba,
+                                const std::vector<float>& sizes) {
+    if (slot < 0 || slot >= kMaxPointClouds) return;
+    if (positions.size() != rgba.size() || positions.size() != sizes.size()) {
+        Log::Warn("renderer", "uploadPointCloud: mismatched array sizes, ignoring.");
+        return;
+    }
+    if (!m_cloudShader)
+        m_cloudShader = linkProgram(compileShader(GL_VERTEX_SHADER, kCloudVS), compileShader(GL_FRAGMENT_SHADER, kCloudFS));
+    if (!m_cloudVao[slot]) {
+        glGenVertexArrays(1, &m_cloudVao[slot]);
+        glGenBuffers(1, &m_cloudVbo[slot]);
+    }
+    std::vector<float> interleaved;
+    interleaved.reserve(positions.size() * 8);
+    for (size_t i = 0; i < positions.size(); ++i) {
+        interleaved.insert(interleaved.end(), {positions[i].x, positions[i].y, positions[i].z, rgba[i].r, rgba[i].g, rgba[i].b,
+                                               rgba[i].a, sizes[i]});
+    }
+    glBindVertexArray(m_cloudVao[slot]);
+    glBindBuffer(GL_ARRAY_BUFFER, m_cloudVbo[slot]);
+    glBufferData(GL_ARRAY_BUFFER, interleaved.size() * sizeof(float), interleaved.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(7 * sizeof(float)));
+    glBindVertexArray(0);
+    m_cloudCount[slot] = static_cast<GLsizei>(positions.size());
+}
+
+void Renderer::renderPointCloud(int slot, const glm::mat4& viewProj, float sizeScale, float alphaScale, bool additive) {
+    if (slot < 0 || slot >= kMaxPointClouds || m_cloudCount[slot] == 0 || alphaScale <= 0.0f) return;
+    glDisable(GL_DEPTH_TEST);
+    if (additive) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glUseProgram(m_cloudShader);
+    glUniformMatrix4fv(glGetUniformLocation(m_cloudShader, "uViewProj"), 1, GL_FALSE, &viewProj[0][0]);
+    glUniform1f(glGetUniformLocation(m_cloudShader, "uSizeScale"), sizeScale);
+    glUniform1f(glGetUniformLocation(m_cloudShader, "uAlpha"), alphaScale);
+    glBindVertexArray(m_cloudVao[slot]);
+    glDrawArrays(GL_POINTS, 0, m_cloudCount[slot]);
+    glBindVertexArray(0);
+    if (additive) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DEPTH_TEST);
 }

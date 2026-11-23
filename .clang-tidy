@@ -1,0 +1,32 @@
+# Static analysis (clang-tidy 18), run in CI on every translation unit.
+# Bug-finding and performance checks; style checks are left to clang-format.
+# Disabled checks are listed with the reason.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-branch-clone,
+  -bugprone-exception-escape,
+  clang-analyzer-*,
+  -clang-analyzer-optin.*,
+  performance-*,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  misc-definitions-in-headers,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  cert-flp30-c
+# easily-swappable-parameters: physics APIs naturally take several doubles.
+# narrowing / implicit-widening: double<->float for the GPU is deliberate throughout.
+# branch-clone: parallel per-case code in tables reads better unmerged.
+# exception-escape: no exceptions are used for control flow; std:: may throw on OOM only.
+# performance-enum-size: enums are cast to/from int for serialization and ImGui; 1 byte saves nothing.
+# cert-err33-c (not enabled): flags every snprintf; all write display text into fixed buffers by design.
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'src/.*'

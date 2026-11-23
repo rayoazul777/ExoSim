@@ -9,7 +9,7 @@
 // st_teff is a directly measured (or well-modeled) stellar property, so
 // this classification is on much firmer ground when the value is present.
 struct StarClassification {
-    std::string spectralClass;      // "G-type (Sun-like)", etc.
+    std::string spectralClass; // "G-type (Sun-like)", etc.
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     bool hasMeasuredTeff = false;
     bool hasMeasuredRadius = false;

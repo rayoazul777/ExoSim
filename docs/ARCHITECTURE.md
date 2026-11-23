@@ -23,20 +23,33 @@ flowchart LR
         LS["LandingSimulator"]
         TL["MissionTimeline"]
         CLK["SimClock"]
+        LAM["Lambert / Porkchop / GravityAssist"]
+        SIM["sim/: Catalog, SimulationState, Command, Replay"]
+        SKY["sky/SkyModel"]
+        GAL["galaxy/GalaxyModel"]
+        CFG["Config / Log"]
     end
     subgraph App["ExoSim.exe"]
-        MAIN["main.cpp: state, camera, UI (ImGui)"]
+        MAIN["main.cpp: CLI only"]
+        APP["app/: RunApp loop, input, view state"]
+        SC["scene/: System, Detail, Landing, Galaxy"]
+        UI["ui/: one file per panel group"]
         R["Renderer (GL 3.3 + GLSL)"]
         CRT["CrtPostProcess"]
     end
     S1 & S2 & S3 --> F1 & F2
     F1 & F2 -->|"data/*.json"| D
-    D --> MAIN
-    K & M & C & A --> MAIN
+    D --> SIM
+    K & M & LAM --> SIM
     B --> LS --> TL
     M --> TL
-    TL & CLK --> MAIN
-    MAIN --> R --> CRT
+    TL & CLK --> SIM
+    MAIN --> APP
+    SIM --> APP
+    APP --> SC & UI
+    SKY & GAL --> SC
+    UI -->|"Command"| SIM
+    SC --> R --> CRT
 ```
 
 | Module | Responsibility | Depends on |
@@ -51,13 +64,26 @@ flowchart LR
 | `LandingSimulator` | Deterministic EDL simulation. RK4 physics at 100 Hz; guidance and control at 20 Hz with zero-order hold; a phase sequencer; ZEM/ZEV powered-descent guidance; limit checks; CSV telemetry | `BodyConstants` |
 | `MissionTimeline` | Sequence of events, mission phase at any time, capture Δv, MET, light time, cruise state-vector export | `MissionPlanner`, `LandingSimulator` |
 | `SimClock` | Fixed-tick (1/120 s) simulation clock with time warp and exact stops on events | — |
-| `Renderer` | All OpenGL drawing: orbits, stars, surfaces, rings, skybox, star catalog | glad, GLM |
+| `Lambert` | Universal-variable Lambert solver (Stumpff functions, bisection on z); state↔elements; universal Kepler propagation (elliptic and hyperbolic) | GLM |
+| `Porkchop` | Launch/arrival grids of C3, v∞ and Δv from LEO; pattern-search refinement | `Lambert`, `KeplerOrbit` |
+| `GravityAssist` | Patched-conic powered flyby chains: turn limit, periapsis burn, Laplace sphere of influence, SOI entry/exit times, sequence optimizer | `Lambert`, `Porkchop` |
+| `sim/Catalog` | Everything loaded from `data/` (planets, orbits, systems, Hipparcos stars); immutable after load | `Dataset` |
+| `sim/SimulationState` | Clock, selected system and planet, mission and timeline. Changed **only** by `apply(Command)`, so a session can be recorded and replayed; FNV-1a state hash | `Catalog`, `MissionPlanner`, `GravityAssist` |
+| `sim/Replay` | JSON-lines recording (tick-stamped commands + final hash); `ReplayPlayer` steps a state one tick at a time | `SimulationState` |
+| `sky/SkyModel` | The sky from any star system: parallax re-projection, proper motion, inverse-square brightness | `Dataset` |
+| `galaxy/GalaxyModel` | Equatorial→Galactic conversion, host-star loading, the illustrative disk/bar/bulge/arm model | nlohmann/json, GLM |
+| `Config` / `Log` | `exosim.json` settings with validation; structured logging (console + JSON lines) | nlohmann/json |
+| `Renderer` | All OpenGL drawing: orbits, stars, surfaces, rings, skybox, star catalog, point clouds | glad, GLM |
 | `CrtPostProcess` | Offscreen framebuffer and CRT composite shader | glad |
-| `main.cpp` | Window, input, camera, simulation clock, UI panels, and orchestration | everything |
+| `app/` | `RunApp` main loop, GLFW input callbacks, view and camera state (`AppContext`) | everything below |
+| `scene/` | One renderer-facing scene per view: System, Detail, Landing, Galaxy | `Renderer`, `AppContext` |
+| `ui/` | ImGui panels; they read state and change it only by issuing `Command`s | `AppContext` |
+| `main.cpp` | Command-line parsing, config and logging setup, dispatch | `app/` |
 | `tools/fetch_data.cpp` | Optional C++ equivalent of the Python fetch script | libcurl, nlohmann/json |
 
-The core modules have no OpenGL dependency, which is what lets
-`ExoSimTests` exercise them without a GPU.
+The core modules (everything above `Renderer`) are built as the
+`ExoSimCore` static library with no OpenGL dependency. `ExoSimTests` and
+the app both link it, which is what lets the tests exercise them without a GPU.
 
 ## Data flow
 
@@ -162,24 +188,33 @@ Scaling notes:
 - WDS loading is dominated by JSON parsing. The cross-match itself uses a
   declination-sorted binary search.
 
-## Coupling, and what I'd refactor first
+## Coupling: how the 0.8 refactor split `main.cpp`
 
-`main.cpp` is the weak point. It owns application state, camera, input,
-the simulation clock, all UI panels, and render orchestration, and
-communicates through captured lambdas (`selectSystem`,
-`rebuildStarField`). It works, but it is hard to test and review. The
-planned split:
+Through 0.7, `main.cpp` owned application state, the camera, input, the
+clock, every UI panel and render orchestration (~2,000 lines, talking
+through captured lambdas). In 0.8 it is ~150 lines of CLI parsing, and the
+rest is split by responsibility:
 
-1. **`SimulationState`**: clock, selected system, and mission, with no GL
-   or ImGui dependency, so it can be unit-tested.
-2. **`SkyModel`**: the star-field reprojection (observer position,
-   parallax, proper motion), which is pure math and testable.
-3. **UI panels**: one class per window (control, detail, mission planner),
-   reading `SimulationState`.
-4. **Recorded-input replay**: the clock already advances in fixed ticks
-   (`SimClock`), and the landing is simulated once, deterministically, and
-   played back. What remains is logging tick-stamped user inputs (warp
-   changes, jumps) so whole sessions can be replayed as regression tests.
+1. **`SimulationState`** (`sim/`): clock, selected system, mission,
+   timeline. No GL or ImGui. Its only mutator is `apply(Command)`, and
+   `advance(dt)` steps the fixed-tick clock, stopping on mission events.
+2. **`SkyModel`** (`sky/`) and **`GalaxyModel`** (`galaxy/`): pure math,
+   unit-tested (ENG, GAL groups).
+3. **Scenes** (`scene/`): one per view. Derived geometry is rebuilt by
+   change detection (`syncWithState`), so a system change from a replay
+   updates the view exactly as a click would.
+4. **UI panels** (`ui/`): read `SimulationState`, write only through
+   `Command`s, which is what makes recording possible.
+5. **Recorded-input replay** (`sim/Replay`): commands are stamped with
+   the clock tick they were applied at; playback re-applies them at the
+   same ticks and compares an FNV-1a hash of the final state
+   (`--verify-replay`, ENG-1…8).
 
-The core modules are already decoupled from rendering, which is why they
-could be unit-tested without changes.
+The refactor was verified by rendering 12 reference views with the
+deterministic screenshot mode before and after the split: all 12 were
+pixel-identical.
+
+What would come next: the remaining presentation state (`ViewState`,
+`CameraState`) is plain structs, which is fine at this size. Moving the
+porkchop grid computation off the UI thread would be the next step if
+grids got larger.

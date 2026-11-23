@@ -13,18 +13,18 @@
 // Venus and Titan use tabulated profiles instead (see BodyConstants.cpp).
 struct BodyConstants {
     const char* name = "";
-    double gmKm3s2 = 0.0;          // gravitational parameter
-    double radiusKm = 0.0;         // mean radius
-    bool hasSolidSurface = true;   // false for the giant planets
+    double gmKm3s2 = 0.0; // gravitational parameter
+    double radiusKm = 0.0; // mean radius
+    bool hasSolidSurface = true; // false for the giant planets
     double surfaceDensityKgM3 = 0.0; // 0 = airless (exosphere ignored)
     double scaleHeightKm = 0.0;
 
     bool hasAtmosphere() const { return surfaceDensityKgM3 > 0.0; }
     double surfaceGravityMs2() const { return gmKm3s2 / (radiusKm * radiusKm) * 1000.0; }
-    double densityAt(double altitudeM) const;   // kg/m^3
+    double densityAt(double altitudeM) const; // kg/m^3
 };
 
 namespace Bodies {
-    // nullptr when the body isn't in the table (e.g. an exoplanet).
-    const BodyConstants* Lookup(const std::string& name);
-}
+// nullptr when the body isn't in the table (e.g. an exoplanet).
+const BodyConstants* Lookup(const std::string& name);
+} // namespace Bodies

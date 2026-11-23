@@ -54,7 +54,10 @@ COLUMNS = [
 # that data mostly lives in individual discovery papers, not a queryable
 # bulk field - so this only gives us real per-star temperature/mass/radius
 # where measured; companion *position* has to stay schematic in the app.
-STELLARHOSTS_COLUMNS = ["hostname", "st_teff", "st_rad", "st_mass", "st_spectype", "sy_snum"]
+# sy_dist: the `ps` default parameter set sometimes has no distance (e.g.
+# TRAPPIST-1), while another reference in `stellarhosts` does - the Milky
+# Way map falls back to it.
+STELLARHOSTS_COLUMNS = ["hostname", "st_teff", "st_rad", "st_mass", "st_spectype", "sy_snum", "sy_dist"]
 
 # NASA/JPL's own Small-Body DataBase API (ssd-api.jpl.nasa.gov) - a
 # DIFFERENT, official NASA data source from the Exoplanet Archive above.

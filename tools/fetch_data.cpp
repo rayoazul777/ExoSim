@@ -65,14 +65,9 @@ const std::string kTapBase = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync
 // Same columns as fetch_exoplanets.py's COLUMNS / STELLARHOSTS_COLUMNS -
 // see that file's comments for why each one is here.
 const std::vector<std::string> kPlanetColumns = {
-    "pl_name", "hostname",
-    "pl_orbper", "pl_orbsmax", "pl_orbeccen", "pl_orbincl", "pl_orblper",
-    "pl_bmassj", "pl_radj",
-    "pl_dens", "pl_eqt", "pl_insol",
-    "st_mass", "st_rad", "st_teff", "st_spectype",
-    "sy_snum",
-    "sy_dist", "ra", "dec",
-    "glat", "glon",
+    "pl_name", "hostname", "pl_orbper", "pl_orbsmax", "pl_orbeccen", "pl_orbincl", "pl_orblper", "pl_bmassj",
+    "pl_radj", "pl_dens",  "pl_eqt",    "pl_insol",   "st_mass",     "st_rad",     "st_teff",    "st_spectype",
+    "sy_snum", "sy_dist",  "ra",        "dec",        "glat",        "glon",
 };
 
 const std::vector<std::string> kStellarHostColumns = {
@@ -110,8 +105,8 @@ std::string JoinColumns(const std::vector<std::string>& cols) {
     return oss.str();
 }
 
-std::string BuildQuery(const std::string& table, const std::vector<std::string>& cols,
-                        const std::string& whereClause, int limit) {
+std::string BuildQuery(const std::string& table, const std::vector<std::string>& cols, const std::string& whereClause,
+                       int limit) {
     std::ostringstream oss;
     oss << "SELECT ";
     if (limit > 0) oss << "TOP " << limit << " ";
@@ -134,14 +129,10 @@ json HttpGetJson(CURL* curl, const std::string& url) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
 
     CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res));
-    }
+    if (res != CURLE_OK) { throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res)); }
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode != 200) {
-        throw std::runtime_error("HTTP request failed: HTTP " + std::to_string(httpCode));
-    }
+    if (httpCode != 200) { throw std::runtime_error("HTTP request failed: HTTP " + std::to_string(httpCode)); }
     return json::parse(response);
 }
 
@@ -158,7 +149,9 @@ json RunQuery(CURL* curl, const std::string& query) {
 double JsonNumOrNull(const json& j, double fallback = 0.0) {
     if (j.is_null()) return fallback;
     if (j.is_string()) {
-        try { return std::stod(j.get<std::string>()); } catch (...) { return fallback; }
+        try {
+            return std::stod(j.get<std::string>());
+        } catch (...) { return fallback; }
     }
     if (j.is_number()) return j.get<double>();
     return fallback;
@@ -195,14 +188,10 @@ std::string HttpGetText(CURL* curl, const std::string& url, bool verifySsl = tru
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
-    if (res != CURLE_OK) {
-        throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res));
-    }
+    if (res != CURLE_OK) { throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res)); }
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    if (httpCode != 200) {
-        throw std::runtime_error("HTTP request failed: HTTP " + std::to_string(httpCode));
-    }
+    if (httpCode != 200) { throw std::runtime_error("HTTP request failed: HTTP " + std::to_string(httpCode)); }
     return response;
 }
 
@@ -214,9 +203,7 @@ std::vector<std::string> SplitCsvLine(const std::string& line) {
     std::vector<std::string> fields;
     std::stringstream ss(line);
     std::string field;
-    while (std::getline(ss, field, ',')) {
-        fields.push_back(field);
-    }
+    while (std::getline(ss, field, ',')) { fields.push_back(field); }
     return fields;
 }
 
@@ -264,8 +251,7 @@ std::vector<std::vector<std::string>> VizierCsvRows(CURL* curl, const std::strin
         rows.push_back(SplitCsvLine(line));
     }
     if (rows.size() < 2) {
-        std::cerr << "WARNING: " << label << " response had no data rows. First 300 chars:\n"
-                  << text.substr(0, 300) << "\n";
+        std::cerr << "WARNING: " << label << " response had no data rows. First 300 chars:\n" << text.substr(0, 300) << "\n";
         return {};
     }
     for (auto& h : rows[0]) {
@@ -286,7 +272,10 @@ int ColIndex(const std::vector<std::string>& header, std::initializer_list<const
 
 bool CellNum(const std::vector<std::string>& row, int i, double& out) {
     if (i < 0 || i >= static_cast<int>(row.size()) || row[i].empty()) return false;
-    try { out = std::stod(row[i]); return true; } catch (...) { return false; }
+    try {
+        out = std::stod(row[i]);
+        return true;
+    } catch (...) { return false; }
 }
 
 // Real Hipparcos catalog (ESA; VizieR I/239/hip_main): position, magnitude,
@@ -321,10 +310,16 @@ json FetchStarCatalog(CURL* curl, double vmagLimit) {
 
 // Decimal degrees, or sexagesimal ("hh mm ss.s" / "dd:mm:ss") if needed.
 bool ParseAngle(std::string text, bool isRa, double& out) {
-    try { size_t used = 0; out = std::stod(text, &used); if (used == text.size()) return true; } catch (...) {}
-    for (char& c : text) if (c == ':') c = ' ';
+    try {
+        size_t used = 0;
+        out = std::stod(text, &used);
+        if (used == text.size()) return true;
+    } catch (...) {}
+    for (char& c : text)
+        if (c == ':') c = ' ';
     std::istringstream ss(text);
-    std::string p0; double b = 0.0, c = 0.0;
+    std::string p0;
+    double b = 0.0, c = 0.0;
     if (!(ss >> p0 >> b)) return false;
     ss >> c;
     try {
@@ -339,8 +334,8 @@ bool ParseAngle(std::string text, bool isRa, double& out) {
 // recent measured angular separation per pair. Shape matches
 // Dataset::LoadDoubleStars (which converts separation x distance -> AU).
 json FetchDoubleStars(CURL* curl) {
-    auto rows = VizierCsvRows(curl, "SELECT RAJ2000, DEJ2000, sep1, sep2 FROM \"B/wds/wds\"",
-                              "the Washington Double Star catalog");
+    auto rows =
+        VizierCsvRows(curl, "SELECT RAJ2000, DEJ2000, sep1, sep2 FROM \"B/wds/wds\"", "the Washington Double Star catalog");
     if (rows.empty()) return json::array();
     const auto& h = rows[0];
     int raI = ColIndex(h, {"RAJ2000", "RA_J2000"}), deI = ColIndex(h, {"DEJ2000", "DE_J2000"});
@@ -403,8 +398,10 @@ json FetchDwarfPlanets(CURL* curl) {
             for (const auto& p : data["phys_par"]) {
                 if (!p.contains("name") || !p.contains("value")) continue;
                 std::string pname = p["name"].get<std::string>();
-                if (pname == "diameter") diameterKm = JsonNumOrNull(p["value"]);
-                else if (pname == "GM") gm = JsonNumOrNull(p["value"]);
+                if (pname == "diameter")
+                    diameterKm = JsonNumOrNull(p["value"]);
+                else if (pname == "GM")
+                    gm = JsonNumOrNull(p["value"]);
             }
         }
 
@@ -449,9 +446,7 @@ void PrintTopSystemsByPlanetCount(const json& planetRows, int topN) {
 
     for (const auto& kv : countByHost) {
         minHeap.push({kv.second, kv.first});
-        if (static_cast<int>(minHeap.size()) > topN) {
-            minHeap.pop();
-        }
+        if (static_cast<int>(minHeap.size()) > topN) { minHeap.pop(); }
     }
 
     std::vector<Entry> top;
@@ -462,9 +457,7 @@ void PrintTopSystemsByPlanetCount(const json& planetRows, int topN) {
     std::reverse(top.begin(), top.end()); // largest first
 
     std::cout << "Top " << top.size() << " systems by planet count (via min-heap selection):\n";
-    for (const auto& entry : top) {
-        std::cout << "  " << entry.second << " - " << entry.first << " planets\n";
-    }
+    for (const auto& entry : top) { std::cout << "  " << entry.second << " - " << entry.first << " planets\n"; }
 }
 
 } // namespace
@@ -480,13 +473,20 @@ int main(int argc, char** argv) {
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--out-dir" && i + 1 < argc) outDir = argv[++i];
-        else if (arg == "--limit" && i + 1 < argc) limit = std::stoi(argv[++i]);
-        else if (arg == "--top-systems" && i + 1 < argc) topN = std::stoi(argv[++i]);
-        else if (arg == "--skip-dwarf-planets") skipDwarfPlanets = true;
-        else if (arg == "--skip-star-catalog") skipStarCatalog = true;
-        else if (arg == "--skip-double-stars") skipDoubleStars = true;
-        else if (arg == "--star-vmag-limit" && i + 1 < argc) starVmagLimit = std::stod(argv[++i]);
+        if (arg == "--out-dir" && i + 1 < argc)
+            outDir = argv[++i];
+        else if (arg == "--limit" && i + 1 < argc)
+            limit = std::stoi(argv[++i]);
+        else if (arg == "--top-systems" && i + 1 < argc)
+            topN = std::stoi(argv[++i]);
+        else if (arg == "--skip-dwarf-planets")
+            skipDwarfPlanets = true;
+        else if (arg == "--skip-star-catalog")
+            skipStarCatalog = true;
+        else if (arg == "--skip-double-stars")
+            skipDoubleStars = true;
+        else if (arg == "--star-vmag-limit" && i + 1 < argc)
+            starVmagLimit = std::stod(argv[++i]);
     }
 
     curl_global_init(CURL_GLOBAL_DEFAULT);

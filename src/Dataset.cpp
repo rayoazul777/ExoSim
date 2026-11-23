@@ -1,4 +1,5 @@
 #include "Dataset.h"
+#include "Log.h"
 #include <fstream>
 #include <iostream>
 #include <algorithm>
@@ -9,38 +10,41 @@
 using json = nlohmann::json;
 
 namespace {
-    // Pulls a numeric field out of a JSON row, returning defaultVal
-    // if the field is missing or null (NASA archive data has a LOT
-    // of nulls - not every planet has every parameter measured).
-    // Type-checked field access: a field that's present but has the wrong
-    // JSON type (e.g. a number arriving as a string, or a row that isn't an
-    // object at all) falls back to the default instead of throwing. Before
-    // this, one malformed catalog row crashed the whole app - found by the
-    // DAT-1 robustness test in tests/test_physics.cpp.
-    double numOr(const json& row, const char* key, double defaultVal) {
-        if (!row.is_object() || !row.contains(key)) return defaultVal;
-        const json& v = row[key];
-        if (v.is_number()) return v.get<double>();
-        if (v.is_string()) {
-            try { size_t used = 0; double d = std::stod(v.get<std::string>(), &used);
-                  if (used == v.get<std::string>().size()) return d; } catch (...) {}
+// Pulls a numeric field out of a JSON row, returning defaultVal
+// if the field is missing or null (NASA archive data has a LOT
+// of nulls - not every planet has every parameter measured).
+// Type-checked field access: a field that's present but has the wrong
+// JSON type (e.g. a number arriving as a string, or a row that isn't an
+// object at all) falls back to the default instead of throwing. Before
+// this, one malformed catalog row crashed the whole app - found by the
+// DAT-1 robustness test in tests/test_physics.cpp.
+double numOr(const json& row, const char* key, double defaultVal) {
+    if (!row.is_object() || !row.contains(key)) return defaultVal;
+    const json& v = row[key];
+    if (v.is_number()) return v.get<double>();
+    if (v.is_string()) {
+        try {
+            size_t used = 0;
+            double d = std::stod(v.get<std::string>(), &used);
+            if (used == v.get<std::string>().size()) return d;
+        } catch (const std::exception&) {
+            return defaultVal; // not a number: treat as missing
         }
-        return defaultVal;
     }
-
-    std::string strOr(const json& row, const char* key, const std::string& defaultVal) {
-        if (row.is_object() && row.contains(key) && row[key].is_string()) {
-            return row[key].get<std::string>();
-        }
-        return defaultVal;
-    }
+    return defaultVal;
 }
+
+std::string strOr(const json& row, const char* key, const std::string& defaultVal) {
+    if (row.is_object() && row.contains(key) && row[key].is_string()) { return row[key].get<std::string>(); }
+    return defaultVal;
+}
+} // namespace
 
 bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& outPlanets) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[Dataset] Could not open " << path
-                  << " - run data/fetch_exoplanets.py first, or fall back to DemoSolarSystem().\n";
+        Log::Warn("dataset",
+                  Log::Cat("Could not open ", path, " - run data/fetch_exoplanets.py first, or fall back to DemoSolarSystem()."));
         return false;
     }
 
@@ -48,7 +52,7 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
     try {
         file >> root;
     } catch (const std::exception& e) {
-        std::cerr << "[Dataset] JSON parse error: " << e.what() << "\n";
+        Log::Warn("dataset", Log::Cat("JSON parse error: ", e.what()));
         return false;
     }
 
@@ -92,7 +96,7 @@ bool Dataset::LoadFromFile(const std::string& path, std::vector<PlanetRecord>& o
     }
 
     outPlanets = std::move(planets);
-    std::cout << "[Dataset] Loaded " << outPlanets.size() << " planets with usable orbital elements.\n";
+    Log::Info("dataset", Log::Cat("Loaded ", outPlanets.size(), " planets with usable orbital elements."));
     return true;
 }
 
@@ -103,8 +107,9 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
     // meanAnomalyAtEpoch = (mean longitude - longitude of perihelion). With
     // these, simulation day 0 IS the J2000 epoch (2000-01-01 12:00 TT), so
     // planet positions - and therefore the mission planner's launch windows
-    // - line up with real calendar dates (to within this simple two-body
-    // model's accuracy, ~a degree or so for the inner planets over decades).
+    // - line up with real calendar dates. The secular rates (Standish
+    // Table 1) keep the fit valid across 1800-2050; docs/VALIDATION.md
+    // measures the error against JPL Horizons DE441 over 1950-2050.
     //
     // eqTempK follows the same "airless blackbody equilibrium" definition
     // the Archive uses for pl_eqt, so it's directly comparable to exoplanet
@@ -113,20 +118,30 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
     // effect this number deliberately excludes).
     struct Seed {
         const char* name;
-        double a, e, i, per, density;
-        double eqTempK, radiusJup, massJup;
-        double argPeriapsisDeg, longAscNodeDeg, meanAnomalyJ2000Deg;
+        double per, density, eqTempK, radiusJup, massJup;
+        // Standish Table 1 (J2000 ecliptic/equinox, valid 1800-2050):
+        // a [AU], e, I [deg], L [deg], varpi [deg], Omega [deg], then rates per century.
+        double a, e, I, L, varpi, node;
+        double da, de, dI, dL, dvarpi, dnode;
     };
     static const Seed seeds[] = {
-        // name        a            e           i      per       dens  eqT    rJup    mJup      argPeri  node     M0(J2000)
-        {"Mercury",  0.38709927, 0.20563593, 7.005,   87.969,  5.43, 440.0, 0.0349, 0.000174,  29.127,  48.331, 174.793},
-        {"Venus",    0.72333566, 0.00677672, 3.395,  224.701,  5.24, 227.0, 0.0865, 0.00257,   54.923,  76.680,  50.377},
-        {"Earth",    1.00000261, 0.01671123, 0.000,  365.256,  5.51, 255.0, 0.0892, 0.00315,  102.938,   0.000, 357.527},
-        {"Mars",     1.52371034, 0.09339410, 1.850,  686.980,  3.93, 210.0, 0.0474, 0.000338, 286.497,  49.560,  19.390},
-        {"Jupiter",  5.20288700, 0.04838624, 1.304, 4332.59,   1.33, 110.0, 1.0,    1.0,      274.255, 100.474,  19.668},
-        {"Saturn",   9.53667594, 0.05386179, 2.486,10759.22,   0.69,  81.0, 0.843,  0.299,    338.937, 113.662, 317.355},
-        {"Uranus",  19.18916464, 0.04725744, 0.773,30688.5,    1.27,  58.0, 0.365,  0.0457,    96.937,  74.017, 142.284},
-        {"Neptune", 30.06992276, 0.00859048, 1.770,60182.0,    1.64,  46.0, 0.354,  0.0536,   273.181, 131.784, 259.915},
+        {"Mercury", 87.969, 5.43, 440.0, 0.0349, 0.000174, 0.38709927, 0.20563593, 7.00497902, 252.25032350, 77.45779628,
+         48.33076593, 0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081},
+        {"Venus", 224.701, 5.24, 227.0, 0.0865, 0.00257, 0.72333566, 0.00677672, 3.39467605, 181.97909950, 131.60246718,
+         76.67984255, 0.00000390, -0.00004107, -0.00078890, 58517.81538729, 0.00268329, -0.27769418},
+        // Earth: Standish's elements are for the Earth-Moon barycenter (EMB).
+        {"Earth", 365.256, 5.51, 255.0, 0.0892, 0.00315, 1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0.0,
+         0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0.0},
+        {"Mars", 686.980, 3.93, 210.0, 0.0474, 0.000338, 1.52371034, 0.09339410, 1.84969142, -4.55343205, -23.94362959,
+         49.55953891, 0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343},
+        {"Jupiter", 4332.59, 1.33, 110.0, 1.0, 1.0, 5.20288700, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909,
+         -0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106},
+        {"Saturn", 10759.22, 0.69, 81.0, 0.843, 0.299, 9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448,
+         -0.00125060, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794},
+        {"Uranus", 30688.5, 1.27, 58.0, 0.365, 0.0457, 19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.95427630,
+         74.01692503, -0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589},
+        {"Neptune", 60182.0, 1.64, 46.0, 0.354, 0.0536, 30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227,
+         131.78422574, 0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.01262724},
     };
 
     std::vector<PlanetRecord> out;
@@ -134,14 +149,24 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
         PlanetRecord p;
         p.name = s.name;
         p.hostStar = "Sun";
-        p.elements.semiMajorAxisAU = s.a;
-        p.elements.eccentricity = s.e;
-        p.elements.inclinationDeg = s.i;
-        p.elements.inclinationMeasured = true; // hand-coded real values, not archive fallbacks
-        p.elements.argPeriapsisDeg = s.argPeriapsisDeg;
-        p.elements.longAscNodeDeg = s.longAscNodeDeg;
-        p.elements.meanAnomalyAtEpochDeg = s.meanAnomalyJ2000Deg;
-        p.elements.periodDays = s.per;
+        OrbitalElements& el = p.elements;
+        el.semiMajorAxisAU = s.a;
+        el.eccentricity = s.e;
+        el.inclinationDeg = s.I;
+        el.inclinationMeasured = true; // published values, not archive fallbacks
+        el.longAscNodeDeg = s.node;
+        el.argPeriapsisDeg = s.varpi - s.node;
+        el.meanAnomalyAtEpochDeg = std::fmod(s.L - s.varpi + 720.0, 360.0);
+        el.periodDays = s.per;
+        el.hasSecularRates = true;
+        el.meanLongitudeDeg = s.L;
+        el.longPerihelionDeg = s.varpi;
+        el.rateA = s.da;
+        el.rateE = s.de;
+        el.rateIncl = s.dI;
+        el.rateMeanLong = s.dL;
+        el.rateLongPeri = s.dvarpi;
+        el.rateNode = s.dnode;
         p.densityGcm3 = s.density;
         p.eqTempK = s.eqTempK;
         p.radiusJupiter = s.radiusJup;
@@ -171,7 +196,8 @@ std::vector<PlanetRecord> Dataset::DemoSolarSystem() {
     // circle roughly every 18.6 years and its periapsis every 8.85 years,
     // so treat these as illustrative of typical magnitude, not live figures.
     auto findPlanet = [&out](const char* name) -> PlanetRecord& {
-        for (auto& p : out) if (p.name == name) return p;
+        for (auto& p : out)
+            if (p.name == name) return p;
         return out[0]; // unreachable given the seeds above
     };
     findPlanet("Earth").moons = {
@@ -237,9 +263,7 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
     // Multi-planet systems are more interesting to land on by default,
     // so sort those first.
     std::sort(systems.begin(), systems.end(),
-        [](const StarSystem& a, const StarSystem& b) {
-            return a.planetIndices.size() > b.planetIndices.size();
-        });
+              [](const StarSystem& a, const StarSystem& b) { return a.planetIndices.size() > b.planetIndices.size(); });
 
     return systems;
 }
@@ -247,8 +271,8 @@ std::vector<StarSystem> Dataset::GroupByHost(const std::vector<PlanetRecord>& pl
 void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>& systems) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[Dataset] No stellar_hosts.json found - companion stars won't be modeled "
-                  << "(run fetch_exoplanets.py to get it; the app works fine without it).\n";
+        Log::Warn("dataset", Log::Cat("No stellar_hosts.json found - companion stars won't be modeled ",
+                                      "(run fetch_exoplanets.py to get it; the app works fine without it)."));
         return;
     }
 
@@ -256,7 +280,7 @@ void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>&
     try {
         file >> root;
     } catch (const std::exception& e) {
-        std::cerr << "[Dataset] stellar_hosts.json parse error: " << e.what() << "\n";
+        Log::Warn("dataset", Log::Cat("stellar_hosts.json parse error: ", e.what()));
         return;
     }
 
@@ -282,7 +306,10 @@ void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>&
         for (const auto& existing : list) {
             bool teffClose = std::fabs(existing.teffK - sc.teffK) < 300.0;
             bool radClose = std::fabs(existing.radiusSolar - sc.radiusSolar) < 0.1;
-            if (teffClose && radClose) { isDuplicate = true; break; }
+            if (teffClose && radClose) {
+                isDuplicate = true;
+                break;
+            }
         }
         if (!isDuplicate) list.push_back(sc);
     }
@@ -312,21 +339,22 @@ void Dataset::LoadStellarHosts(const std::string& path, std::vector<StarSystem>&
             sys.companions.push_back(StarComponent{}); // hasData = false
         }
 
-        if (hadRealCompanion) ++systemsWithRealCompanionData;
-        else ++systemsWithUnresolvedCompanions;
+        if (hadRealCompanion)
+            ++systemsWithRealCompanionData;
+        else
+            ++systemsWithUnresolvedCompanions;
     }
 
-    std::cout << "[Dataset] Multi-star systems with resolved companion data: "
-              << systemsWithRealCompanionData << "; with unresolved companion(s): "
-              << systemsWithUnresolvedCompanions << ".\n";
+    Log::Info("dataset", Log::Cat("Multi-star systems with resolved companion data: ", systemsWithRealCompanionData,
+                                  "; with unresolved companion(s): ", systemsWithUnresolvedCompanions, "."));
 }
 
 void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord>& planets) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[Dataset] No dwarf_planets.json found - Sol will only show the 8 main "
-                  << "planets (run fetch_exoplanets.py to pull real dwarf-planet data from "
-                  << "NASA/JPL's SBDB, a different NASA source from the Exoplanet Archive).\n";
+        Log::Warn("dataset", Log::Cat("No dwarf_planets.json found - Sol will only show the 8 main ",
+                                      "planets (run fetch_exoplanets.py to pull real dwarf-planet data from ",
+                                      "NASA/JPL's SBDB, a different NASA source from the Exoplanet Archive)."));
         return;
     }
 
@@ -334,7 +362,7 @@ void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord
     try {
         file >> root;
     } catch (const std::exception& e) {
-        std::cerr << "[Dataset] dwarf_planets.json parse error: " << e.what() << "\n";
+        Log::Warn("dataset", Log::Cat("dwarf_planets.json parse error: ", e.what()));
         return;
     }
 
@@ -373,9 +401,7 @@ void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord
         }
 
         double diameterKm = numOr(row, "diameter_km", 0.0);
-        if (diameterKm > 0.0) {
-            p.radiusJupiter = (diameterKm / 2.0) / kJupiterRadiusKm;
-        }
+        if (diameterKm > 0.0) { p.radiusJupiter = (diameterKm / 2.0) / kJupiterRadiusKm; }
 
         double gm = numOr(row, "gm", 0.0); // km^3/s^2, standard gravitational parameter
         double massKg = 0.0;
@@ -402,7 +428,7 @@ void Dataset::LoadDwarfPlanets(const std::string& path, std::vector<PlanetRecord
         ++added;
     }
 
-    std::cout << "[Dataset] Added " << added << " dwarf planet(s) from NASA/JPL SBDB.\n";
+    Log::Info("dataset", Log::Cat("Added ", added, " dwarf planet(s) from NASA/JPL SBDB."));
 }
 
 std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) {
@@ -410,9 +436,9 @@ std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) 
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[Dataset] No star_catalog.json found - the skybox will use its procedural "
-                  << "nebula/band only, with no real starfield (run fetch_exoplanets.py to pull "
-                  << "the real Hipparcos catalog via CDS's VizieR TAP service).\n";
+        Log::Warn("dataset", Log::Cat("No star_catalog.json found - the skybox will use its procedural ",
+                                      "nebula/band only, with no real starfield (run fetch_exoplanets.py to pull ",
+                                      "the real Hipparcos catalog via CDS's VizieR TAP service)."));
         return stars;
     }
 
@@ -420,7 +446,7 @@ std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) 
     try {
         file >> root;
     } catch (const std::exception& e) {
-        std::cerr << "[Dataset] star_catalog.json parse error: " << e.what() << "\n";
+        Log::Warn("dataset", Log::Cat("star_catalog.json parse error: ", e.what()));
         return stars;
     }
 
@@ -443,24 +469,28 @@ std::vector<StarCatalogEntry> Dataset::LoadStarCatalog(const std::string& path) 
         stars.push_back(s);
     }
 
-    std::cout << "[Dataset] Loaded " << stars.size() << " real stars from the Hipparcos catalog.\n";
+    Log::Info("dataset", Log::Cat("Loaded ", stars.size(), " real stars from the Hipparcos catalog."));
     return stars;
 }
 
 void Dataset::LoadDoubleStars(const std::string& path, std::vector<StarSystem>& systems) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cerr << "[Dataset] No double_stars.json found - companion stars keep a schematic "
-                  << "separation (run fetch_exoplanets.py to pull the Washington Double Star catalog).\n";
+        Log::Warn("dataset", Log::Cat("No double_stars.json found - companion stars keep a schematic ",
+                                      "separation (run fetch_exoplanets.py to pull the Washington Double Star catalog)."));
         return;
     }
     json root;
-    try { file >> root; } catch (const std::exception& e) {
-        std::cerr << "[Dataset] double_stars.json parse error: " << e.what() << "\n";
+    try {
+        file >> root;
+    } catch (const std::exception& e) {
+        Log::Warn("dataset", Log::Cat("double_stars.json parse error: ", e.what()));
         return;
     }
 
-    struct Pair { double ra, dec, sepArcsec; };
+    struct Pair {
+        double ra, dec, sepArcsec;
+    };
     std::vector<Pair> pairs;
     pairs.reserve(root.size());
     for (const auto& row : root) {
@@ -480,14 +510,21 @@ void Dataset::LoadDoubleStars(const std::string& path, std::vector<StarSystem>& 
     for (auto& sys : systems) {
         if (sys.numStars <= 1 || sys.companions.empty() || sys.distPc <= 0.0) continue;
         double tol = kMatchRadiusArcsec / 3600.0;
-        auto lo = std::lower_bound(pairs.begin(), pairs.end(), sys.hostDecDeg - tol,
-            [](const Pair& p, double d) { return p.dec < d; });
-        double bestDist = 1e9; const Pair* best = nullptr;
+        auto lo =
+            std::lower_bound(pairs.begin(), pairs.end(), sys.hostDecDeg - tol, [](const Pair& p, double d) { return p.dec < d; });
+        double bestDist = 1e9;
+        const Pair* best = nullptr;
         for (auto it = lo; it != pairs.end() && it->dec <= sys.hostDecDeg + tol; ++it) {
             double dRa = (it->ra - sys.hostRaDeg) * std::cos(sys.hostDecDeg * kDegToRad);
-            if (dRa > 180.0) dRa -= 360.0; else if (dRa < -180.0) dRa += 360.0;
+            if (dRa > 180.0)
+                dRa -= 360.0;
+            else if (dRa < -180.0)
+                dRa += 360.0;
             double dist = std::sqrt(dRa * dRa + (it->dec - sys.hostDecDeg) * (it->dec - sys.hostDecDeg)) * 3600.0;
-            if (dist < kMatchRadiusArcsec && dist < bestDist) { bestDist = dist; best = &*it; }
+            if (dist < kMatchRadiusArcsec && dist < bestDist) {
+                bestDist = dist;
+                best = &*it;
+            }
         }
         if (best) {
             // 1 arcsec at 1 parsec subtends exactly 1 AU (that's the parsec's
@@ -499,6 +536,6 @@ void Dataset::LoadDoubleStars(const std::string& path, std::vector<StarSystem>& 
             ++matched;
         }
     }
-    std::cout << "[Dataset] Matched " << matched
-              << " multi-star system(s) to real WDS separations (projected, i.e. lower bounds).\n";
+    Log::Info("dataset",
+              Log::Cat("Matched ", matched, " multi-star system(s) to real WDS separations (projected, i.e. lower bounds)."));
 }

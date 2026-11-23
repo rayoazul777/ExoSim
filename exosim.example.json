@@ -1,0 +1,7 @@
+{
+  "dataDir": "data",
+  "window": { "width": 1280, "height": 800, "vsync": true },
+  "simulation": { "speedDaysPerSec": 5.0, "warpToEvents": true },
+  "paths": { "telemetry": "telemetry", "recordings": "recordings" },
+  "log": { "console": "info", "file": "logs/exosim.jsonl", "fileLevel": "debug" }
+}

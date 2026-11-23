@@ -14,12 +14,12 @@ struct MoonRecord {
     std::string name;
     double orbitRadiusPlanetRadii = 0.0; // distance from planet, in units of the planet's own radius
     double orbitPeriodDays = 0.0;
-    double inclinationDeg = 0.0;         // real for demo moons (approximate), illustrative otherwise
-    double eccentricity = 0.0;           // real for demo moons (approximate), illustrative otherwise
-    double argPeriapsisDeg = 0.0;        // real (approximate) where confidently known, else 0
-    double longAscNodeDeg = 0.0;         // real (approximate) where confidently known, else 0
+    double inclinationDeg = 0.0; // real for demo moons (approximate), illustrative otherwise
+    double eccentricity = 0.0; // real for demo moons (approximate), illustrative otherwise
+    double argPeriapsisDeg = 0.0; // real (approximate) where confidently known, else 0
+    double longAscNodeDeg = 0.0; // real (approximate) where confidently known, else 0
     bool isReal = false;
-    double radiusKm = 0.0;               // real mean radius for real moons; 0 = unknown/speculative
+    double radiusKm = 0.0; // real mean radius for real moons; 0 = unknown/speculative
 };
 
 // A companion star in a multi-star system. The Archive's `stellarhosts`
@@ -51,8 +51,8 @@ struct StarComponent {
 struct StarCatalogEntry {
     double raDeg = 0.0;
     double decDeg = 0.0;
-    double vmag = 0.0;    // visual magnitude - lower/negative is brighter
-    double bv = 0.6;      // B-V color index (0.6 ~ Sun-like, if not measured)
+    double vmag = 0.0; // visual magnitude - lower/negative is brighter
+    double bv = 0.6; // B-V color index (0.6 ~ Sun-like, if not measured)
     bool hasBv = false;
 
     // Real Hipparcos proper motion (mas/yr; pmRA already includes the
@@ -66,24 +66,24 @@ struct PlanetRecord {
     std::string name;
     std::string hostStar;
     OrbitalElements elements;
-    double massJupiter = 0.0;   // pl_bmassj, for point-size / info panel
+    double massJupiter = 0.0; // pl_bmassj, for point-size / info panel
     double radiusJupiter = 0.0; // pl_radj
 
     // Fields used to sharpen composition/atmosphere estimates - real
     // Archive measurements, not fabricated. Density in particular is far
     // more diagnostic of rocky-vs-gas than radius or mass alone.
-    double densityGcm3 = 0.0;     // pl_dens (0 = not measured)
-    double eqTempK = 0.0;         // pl_eqt (0 = not measured)
+    double densityGcm3 = 0.0; // pl_dens (0 = not measured)
+    double eqTempK = 0.0; // pl_eqt (0 = not measured)
     double insolationEarth = 0.0; // pl_insol, relative to Earth's (0 = not measured)
 
     // Host star's physical properties, repeated on every planet row by
     // the Archive since it's a per-system property - GroupByHost copies
     // these onto the StarSystem once so they aren't duplicated in the UI.
-    double starTeffK = 0.0;         // st_teff, Kelvin (0 = not measured)
-    double starRadiusSolar = 0.0;   // st_rad, solar radii (0 = not measured)
-    double starMassSolar = 0.0;     // st_mass, solar masses (0 = not measured)
-    std::string starSpectralType;   // st_spectype, e.g. "G2 V" (often empty)
-    int numStarsInSystem = 1;       // sy_snum (>1 = binary/multiple star system)
+    double starTeffK = 0.0; // st_teff, Kelvin (0 = not measured)
+    double starRadiusSolar = 0.0; // st_rad, solar radii (0 = not measured)
+    double starMassSolar = 0.0; // st_mass, solar masses (0 = not measured)
+    std::string starSpectralType; // st_spectype, e.g. "G2 V" (often empty)
+    int numStarsInSystem = 1; // sy_snum (>1 = binary/multiple star system)
 
     // Real galactic coordinates of this system, used only to orient the
     // background skybox so it's genuinely related to where the system
@@ -91,8 +91,8 @@ struct PlanetRecord {
     // "not measured" for a real exoplanet, or "not physically meaningful"
     // for the Sun itself (a star's galactic coordinates describe its
     // direction as seen from the Sun, which doesn't apply to the Sun).
-    double galacticLatDeg = 0.0;    // glat
-    double galacticLonDeg = 0.0;    // glon
+    double galacticLatDeg = 0.0; // glat
+    double galacticLonDeg = 0.0; // glon
 
     // Host's real sky position and distance (ra/dec/sy_dist) - used to
     // compute how the real Hipparcos sky looks FROM this system (nearby
@@ -181,4 +181,3 @@ public:
     // product exactly AU. Safe if the file is missing (adds nothing).
     static void LoadDoubleStars(const std::string& path, std::vector<StarSystem>& systems);
 };
-

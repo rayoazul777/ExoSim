@@ -5,36 +5,36 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
 
     if (name == "Mercury") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.55f, 0.53f, 0.50f);   // gray, heavily cratered
+        a.primaryColor = glm::vec3(0.55f, 0.53f, 0.50f); // gray, heavily cratered
         a.secondaryColor = glm::vec3(0.42f, 0.40f, 0.38f);
         a.axialTiltDeg = 0.03f;
     } else if (name == "Venus") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.92f, 0.85f, 0.62f);   // pale yellow-white
+        a.primaryColor = glm::vec3(0.92f, 0.85f, 0.62f); // pale yellow-white
         a.secondaryColor = glm::vec3(0.85f, 0.75f, 0.50f);
-        a.hazeIntensity = 0.85f;                            // near-total cloud cover
-        a.axialTiltDeg = 177.4f;                            // retrograde, almost upside-down
+        a.hazeIntensity = 0.85f; // near-total cloud cover
+        a.axialTiltDeg = 177.4f; // retrograde, almost upside-down
     } else if (name == "Earth") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.12f, 0.32f, 0.62f);    // ocean blue
-        a.secondaryColor = glm::vec3(0.32f, 0.42f, 0.22f);  // land green/brown
+        a.primaryColor = glm::vec3(0.12f, 0.32f, 0.62f); // ocean blue
+        a.secondaryColor = glm::vec3(0.32f, 0.42f, 0.22f); // land green/brown
         a.hasContinents = true;
         a.hasPolarCaps = true;
         a.axialTiltDeg = 23.4f;
     } else if (name == "Mars") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.72f, 0.35f, 0.20f);    // rust red-orange
+        a.primaryColor = glm::vec3(0.72f, 0.35f, 0.20f); // rust red-orange
         a.secondaryColor = glm::vec3(0.50f, 0.22f, 0.15f);
-        a.hasPolarCaps = true;                              // smaller than Earth's, shader treats uniformly
+        a.hasPolarCaps = true; // smaller than Earth's, shader treats uniformly
         a.axialTiltDeg = 25.2f;
     } else if (name == "Jupiter") {
         a.isKnown = true;
         a.isBanded = true;
-        a.primaryColor = glm::vec3(0.85f, 0.68f, 0.48f);    // tan/orange bands
+        a.primaryColor = glm::vec3(0.85f, 0.68f, 0.48f); // tan/orange bands
         a.secondaryColor = glm::vec3(0.65f, 0.48f, 0.32f);
         a.hasGreatSpot = true;
-        a.spotColor = glm::vec3(0.72f, 0.30f, 0.20f);       // the Great Red Spot
-        a.spotLatitude = 0.62f;                             // southern hemisphere
+        a.spotColor = glm::vec3(0.72f, 0.30f, 0.20f); // the Great Red Spot
+        a.spotLatitude = 0.62f; // southern hemisphere
         a.spotLongitude = 0.35f;
         a.axialTiltDeg = 3.1f;
         // Real but extremely faint dusty rings (discovered by Voyager 1) -
@@ -50,7 +50,7 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
     } else if (name == "Saturn") {
         a.isKnown = true;
         a.isBanded = true;
-        a.primaryColor = glm::vec3(0.85f, 0.76f, 0.56f);    // pale gold
+        a.primaryColor = glm::vec3(0.85f, 0.76f, 0.56f); // pale gold
         a.secondaryColor = glm::vec3(0.74f, 0.65f, 0.46f);
         a.hasRings = true;
         a.ringColor = glm::vec3(0.82f, 0.76f, 0.62f);
@@ -69,9 +69,9 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
     } else if (name == "Uranus") {
         a.isKnown = true;
         a.isBanded = true;
-        a.primaryColor = glm::vec3(0.62f, 0.85f, 0.86f);    // pale cyan
+        a.primaryColor = glm::vec3(0.62f, 0.85f, 0.86f); // pale cyan
         a.secondaryColor = glm::vec3(0.52f, 0.76f, 0.78f);
-        a.hasRings = true;                                  // real, but much fainter/darker than Saturn's
+        a.hasRings = true; // real, but much fainter/darker than Saturn's
         a.ringColor = glm::vec3(0.45f, 0.55f, 0.58f);
         // Real radii (NASA Uranian ring fact sheet), planet radius 25,559 km.
         // Uranus's rings are narrow and dark; nearby rings are grouped
@@ -82,14 +82,14 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
             {1.8458f, 1.8897f, 0.30f}, // Eta/Gamma/Delta rings: 47176-48300 km
             {1.9993f, 2.0032f, 0.55f}, // Epsilon ring: 51099-51199 km
         };
-        a.axialTiltDeg = 97.8f;                             // famously rolls on its side
+        a.axialTiltDeg = 97.8f; // famously rolls on its side
     } else if (name == "Neptune") {
         a.isKnown = true;
         a.isBanded = true;
-        a.primaryColor = glm::vec3(0.16f, 0.28f, 0.75f);    // deep blue
+        a.primaryColor = glm::vec3(0.16f, 0.28f, 0.75f); // deep blue
         a.secondaryColor = glm::vec3(0.12f, 0.20f, 0.60f);
         a.hasGreatSpot = true;
-        a.spotColor = glm::vec3(0.08f, 0.14f, 0.40f);       // the (historical) Great Dark Spot
+        a.spotColor = glm::vec3(0.08f, 0.14f, 0.40f); // the (historical) Great Dark Spot
         a.spotLatitude = 0.45f;
         a.spotLongitude = 0.6f;
         a.axialTiltDeg = 28.3f;
@@ -107,20 +107,20 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
     } else if (name == "Pluto") {
         // Imaged up close by New Horizons (2015) - real, not statistical.
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.60f, 0.46f, 0.36f);    // tan/reddish-brown terrain
-        a.secondaryColor = glm::vec3(0.40f, 0.26f, 0.20f);  // darker reddish regions (Cthulhu Macula)
+        a.primaryColor = glm::vec3(0.60f, 0.46f, 0.36f); // tan/reddish-brown terrain
+        a.secondaryColor = glm::vec3(0.40f, 0.26f, 0.20f); // darker reddish regions (Cthulhu Macula)
         a.hasGreatSpot = true;
-        a.spotColor = glm::vec3(0.90f, 0.86f, 0.76f);       // Tombaugh Regio, the famous bright "heart"
+        a.spotColor = glm::vec3(0.90f, 0.86f, 0.76f); // Tombaugh Regio, the famous bright "heart"
         a.spotLatitude = 0.55f;
         a.spotLongitude = 0.5f;
-        a.axialTiltDeg = 122.5f;                            // extreme tilt, similar in spirit to Uranus
+        a.axialTiltDeg = 122.5f; // extreme tilt, similar in spirit to Uranus
     } else if (name == "Ceres") {
         // Imaged up close by Dawn (2015) - real, not statistical.
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.52f, 0.50f, 0.48f);    // gray, cratered
+        a.primaryColor = glm::vec3(0.52f, 0.50f, 0.48f); // gray, cratered
         a.secondaryColor = glm::vec3(0.42f, 0.40f, 0.38f);
         a.hasGreatSpot = true;
-        a.spotColor = glm::vec3(0.95f, 0.95f, 0.95f);       // the bright salt deposits in Occator crater
+        a.spotColor = glm::vec3(0.95f, 0.95f, 0.95f); // the bright salt deposits in Occator crater
         a.spotLatitude = 0.4f;
         a.spotLongitude = 0.2f;
         a.axialTiltDeg = 4.0f;
@@ -136,57 +136,57 @@ PlanetAppearance SolarSystemAppearance::Lookup(const std::string& name) {
     // moons flagged isReal=true, never to speculative exoplanet moons) ---
     else if (name == "Moon") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.72f, 0.70f, 0.66f);    // pale gray, heavily cratered
+        a.primaryColor = glm::vec3(0.72f, 0.70f, 0.66f); // pale gray, heavily cratered
         a.secondaryColor = glm::vec3(0.55f, 0.53f, 0.50f);
         a.axialTiltDeg = 6.68f;
     } else if (name == "Phobos" || name == "Deimos") {
         // Real bodies are irregular/potato-shaped - our sphere is a
         // simplification for both these and every other non-round body.
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.40f, 0.36f, 0.33f);    // dark, reddish-gray
+        a.primaryColor = glm::vec3(0.40f, 0.36f, 0.33f); // dark, reddish-gray
         a.secondaryColor = glm::vec3(0.30f, 0.27f, 0.25f);
     } else if (name == "Io") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.85f, 0.70f, 0.35f);    // sulfur yellow-orange
-        a.secondaryColor = glm::vec3(0.70f, 0.35f, 0.15f);  // volcanic deposits
+        a.primaryColor = glm::vec3(0.85f, 0.70f, 0.35f); // sulfur yellow-orange
+        a.secondaryColor = glm::vec3(0.70f, 0.35f, 0.15f); // volcanic deposits
         a.hasGreatSpot = true;
-        a.spotColor = glm::vec3(0.25f, 0.08f, 0.05f);       // an active volcanic caldera
+        a.spotColor = glm::vec3(0.25f, 0.08f, 0.05f); // an active volcanic caldera
         a.spotLatitude = 0.5f;
         a.spotLongitude = 0.4f;
     } else if (name == "Europa") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.83f, 0.86f, 0.90f);    // icy white
-        a.secondaryColor = glm::vec3(0.55f, 0.38f, 0.32f);  // reddish-brown surface cracks (lineae)
+        a.primaryColor = glm::vec3(0.83f, 0.86f, 0.90f); // icy white
+        a.secondaryColor = glm::vec3(0.55f, 0.38f, 0.32f); // reddish-brown surface cracks (lineae)
         // Real Europa's lineae are long, linear, often great-circle-like
         // cracks - rendered as such now (arc geometry), though the specific
         // arc orientations are procedural, not a map of the real ones.
         a.hasLineae = true;
     } else if (name == "Ganymede") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.58f, 0.55f, 0.52f);    // grayish-brown, cratered/grooved
+        a.primaryColor = glm::vec3(0.58f, 0.55f, 0.52f); // grayish-brown, cratered/grooved
         a.secondaryColor = glm::vec3(0.42f, 0.40f, 0.40f);
     } else if (name == "Callisto") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.42f, 0.38f, 0.35f);    // dark, heavily cratered
+        a.primaryColor = glm::vec3(0.42f, 0.38f, 0.35f); // dark, heavily cratered
         a.secondaryColor = glm::vec3(0.30f, 0.27f, 0.25f);
     } else if (name == "Titan") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.82f, 0.62f, 0.36f);    // hazy orange
+        a.primaryColor = glm::vec3(0.82f, 0.62f, 0.36f); // hazy orange
         a.secondaryColor = glm::vec3(0.70f, 0.50f, 0.28f);
-        a.hazeIntensity = 0.75f;                            // thick atmosphere obscures the surface
+        a.hazeIntensity = 0.75f; // thick atmosphere obscures the surface
     } else if (name == "Rhea") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.80f, 0.80f, 0.80f);    // bright icy surface
+        a.primaryColor = glm::vec3(0.80f, 0.80f, 0.80f); // bright icy surface
         a.secondaryColor = glm::vec3(0.68f, 0.68f, 0.68f);
     } else if (name == "Titania" || name == "Oberon") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.55f, 0.55f, 0.58f);    // dark icy-gray
+        a.primaryColor = glm::vec3(0.55f, 0.55f, 0.58f); // dark icy-gray
         a.secondaryColor = glm::vec3(0.42f, 0.42f, 0.45f);
     } else if (name == "Triton") {
         a.isKnown = true;
-        a.primaryColor = glm::vec3(0.85f, 0.80f, 0.80f);    // pale pink-white nitrogen frost
+        a.primaryColor = glm::vec3(0.85f, 0.80f, 0.80f); // pale pink-white nitrogen frost
         a.secondaryColor = glm::vec3(0.70f, 0.65f, 0.66f);
-        a.axialTiltDeg = 157.0f;                            // reflects its steep retrograde-like orbit
+        a.axialTiltDeg = 157.0f; // reflects its steep retrograde-like orbit
     }
     // Everything else (every real exoplanet, every speculative moon, and
     // the demo's own Sun) is left as the default isKnown=false -

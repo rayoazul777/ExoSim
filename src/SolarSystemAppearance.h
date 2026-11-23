@@ -24,11 +24,11 @@ struct PlanetAppearance {
     glm::vec3 secondaryColor{0.5f, 0.5f, 0.5f}; // band/land/secondary tone
 
     bool hasContinents = false; // Earth: land-vs-ocean mask instead of bands
-    bool hasPolarCaps = false;  // Earth, Mars: bright poles
+    bool hasPolarCaps = false; // Earth, Mars: bright poles
 
-    bool hasGreatSpot = false;  // Jupiter's Great Red Spot, Neptune's Great Dark Spot
+    bool hasGreatSpot = false; // Jupiter's Great Red Spot, Neptune's Great Dark Spot
     glm::vec3 spotColor{0.0f, 0.0f, 0.0f};
-    float spotLatitude = 0.5f;  // UV.y, 0=north pole, 1=south pole
+    float spotLatitude = 0.5f; // UV.y, 0=north pole, 1=south pole
     float spotLongitude = 0.3f; // UV.x, 0..1 wraps around
 
     float hazeIntensity = 0.0f; // Venus/Titan-style thick obscuring cloud

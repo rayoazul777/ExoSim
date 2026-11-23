@@ -19,11 +19,14 @@ public:
     static constexpr int kMaxTicksPerFrame = 60; // a long stall doesn't fast-forward unboundedly
 
     double timeDays = 0.0;
-    double warp = 5.0 * 86400.0;  // simulation seconds per real second (1 = real time)
+    double warp = 5.0 * 86400.0; // simulation seconds per real second (1 = real time)
     bool paused = false;
     std::uint64_t ticks = 0;
 
-    struct Advance { int ticks = 0; bool hitStop = false; };
+    struct Advance {
+        int ticks = 0;
+        bool hitStop = false;
+    };
 
     Advance advance(double realDtSec, double stopAtDay = std::numeric_limits<double>::infinity()) {
         Advance a;
@@ -37,11 +40,13 @@ public:
                 timeDays = stopAtDay;
                 warp = 1.0;
                 a.hitStop = true;
-                ++ticks; ++a.ticks;
+                ++ticks;
+                ++a.ticks;
                 break;
             }
             timeDays = next;
-            ++ticks; ++a.ticks;
+            ++ticks;
+            ++a.ticks;
         }
         if (budget < 0) m_accum = 0.0; // drop the backlog rather than spiral
         return a;

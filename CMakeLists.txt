@@ -20,7 +20,7 @@ if(CMAKE_HOST_WIN32 AND (NOT CMAKE_TOOLCHAIN_FILE OR NOT EXISTS "${CMAKE_TOOLCHA
     endif()
 endif()
 
-project(ExoSim VERSION 0.7.0 LANGUAGES CXX)
+project(ExoSim VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,18 +44,38 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Build + run:  ctest --output-on-failure   (ExoSimTests --markdown prints
 # the results table used in the docs)
 enable_testing()
-add_executable(ExoSimTests
-    tests/test_physics.cpp
+# Core library: physics, data, simulation state, replay, logging and config -
+# everything without OpenGL or ImGui. Shared by the app, the tests and tools.
+add_library(ExoSimCore STATIC
     src/KeplerOrbit.cpp
     src/MissionPlanner.cpp
     src/Dataset.cpp
     src/PlanetClassifier.cpp
+    src/StarClassifier.cpp
+    src/SolarSystemAppearance.cpp
     src/BodyConstants.cpp
     src/LandingSimulator.cpp
     src/MissionTimeline.cpp
+    src/Lambert.cpp
+    src/Porkchop.cpp
+    src/GravityAssist.cpp
+    src/Log.cpp
+    src/Config.cpp
+    src/sim/Catalog.cpp
+    src/sim/Formatting.cpp
+    src/sim/Replay.cpp
+    src/sim/SimulationState.cpp
+    src/sim/SpeculativeMoons.cpp
+    src/sky/SkyModel.cpp
+    src/galaxy/GalaxyModel.cpp
 )
-target_include_directories(ExoSimTests PRIVATE src)
-target_link_libraries(ExoSimTests PRIVATE glm::glm nlohmann_json::nlohmann_json)
+target_include_directories(ExoSimCore PUBLIC src)
+target_link_libraries(ExoSimCore PUBLIC glm::glm nlohmann_json::nlohmann_json)
+
+add_executable(ExoSimTests tests/test_physics.cpp tests/test_engineering.cpp tests/test_horizons.cpp tests/test_lambert.cpp
+ tests/test_galaxy.cpp)
+target_link_libraries(ExoSimTests PRIVATE ExoSimCore)
+target_compile_definitions(ExoSimTests PRIVATE EXOSIM_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
 add_test(NAME physics_and_data_validation COMMAND ExoSimTests)
 
 if(EXOSIM_BUILD_APP)
@@ -68,21 +88,26 @@ if(EXOSIM_BUILD_APP)
     add_executable(ExoSim
         src/main.cpp
         src/Platform.cpp
-        src/KeplerOrbit.cpp
-        src/Dataset.cpp
         src/Renderer.cpp
         src/CrtPostProcess.cpp
-        src/PlanetClassifier.cpp
-        src/StarClassifier.cpp
-        src/SolarSystemAppearance.cpp
-        src/MissionPlanner.cpp
-        src/BodyConstants.cpp
-        src/LandingSimulator.cpp
-        src/MissionTimeline.cpp
+        src/app/App.cpp
+        src/app/Input.cpp
+        src/app/SelfTest.cpp
+        src/app/ViewState.cpp
+        src/scene/SystemScene.cpp
+        src/scene/Scenes.cpp
+        src/ui/ControlPanel.cpp
+        src/ui/DetailPanels.cpp
+        src/ui/LandingPanel.cpp
+        src/ui/MissionPanels.cpp
+        src/ui/PorkchopPanel.cpp
+        src/ui/GalaxyPanel.cpp
+        src/scene/GalaxyScene.cpp
     )
     target_include_directories(ExoSim PRIVATE src)
     target_compile_definitions(ExoSim PRIVATE EXOSIM_VERSION="${PROJECT_VERSION}")
     target_link_libraries(ExoSim PRIVATE
+        ExoSimCore
         glfw
         glad::glad
         glm::glm

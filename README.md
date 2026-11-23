@@ -2,7 +2,7 @@
 
 **A C++ orbital simulation and visualization system.** It ingests real astronomical catalogs, propagates orbits, and computes mission-transfer opportunities, and it keeps validated physical data clearly separate from assumptions and visualization choices.
 
-Version 0.7.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CHANGELOG.md)
+Version 0.8.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CHANGELOG.md)
 
 <!-- Screenshots and demo video: see "Demo" below. -->
 
@@ -14,15 +14,18 @@ Version 0.7.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CH
   - Hipparcos catalog: ~9,000 naked-eye stars with positions, colors, proper motions and parallaxes.
   - Washington Double Star catalog: companion-star separations.
 - **Orbital mechanics.**
-  - Kepler-equation propagation on real J2000 elements, so Sol's planets sit where they really are on today's date.
-  - A Hohmann mission planner that finds real launch windows and computes patched-conic Δv. For example, it finds the late-2026 Mars window: 265 days, 3.68 km/s from low Earth orbit.
+  - Kepler-equation propagation on JPL's elements **with their secular rates**, validated against JPL Horizons (DE441) over 1950–2050: inner planets within 18–77″.
+  - A **Lambert** mission planner (3-D, arbitrary dates) with **porkchop plots** of C3, v∞ and Δv. It finds the 2020 Mars window within 2 days of Perseverance's launch.
+  - **Gravity-assist chains** (patched conics, powered flybys, sphere-of-influence transitions). The optimizer rediscovers the Voyager (Earth–Jupiter–Saturn, 1977) and New Horizons (Earth–Jupiter–Pluto, 2006) launch dates.
 - **Mission operations and landing.**
   - Click the spacecraft to follow it, with a fixed-tick clock running anywhere from real time to 10 days/s and stopping on mission events.
   - A sequence of events and live telemetry, including the signal delay to Earth.
   - At arrival, a simulated entry, descent and landing played back in real time. It uses closed-loop ZEM/ZEV powered-descent guidance at 20 Hz on 100 Hz physics. The simulated touchdowns match Perseverance (0.75 m/s), Apollo 11 (~12 min of powered descent) and Huygens (4.5 m/s).
-- **Validated.**
-  - 87 automated checks against conservation laws, closed-form solutions, published astronomical events and real landings. Modeled oppositions of Mars, Jupiter and Saturn land within **12–70 minutes** of the published times.
-  - Clean under AddressSanitizer and UndefinedBehaviorSanitizer.
+- **A Milky Way map.** Scroll from 1 pc to 80 kpc: 4,668 exoplanet host stars at their real 3-D positions, over an illustrative model of the disk, bar and spiral arms, in a 2-D top-down map or a 3-D view. Click a host to open its system.
+- **Validated and replayable.**
+  - 181 automated checks against conservation laws, closed-form solutions, JPL Horizons, published astronomical events, real missions and real landings.
+  - Whole sessions can be recorded and replayed; a state hash proves the replay matches.
+  - Clean under AddressSanitizer, UndefinedBehaviorSanitizer and clang-tidy; formatting enforced in CI.
   - All shaders pass the Khronos reference compiler.
   - Writing the suite found and fixed four real defects. See [Validation](docs/VALIDATION.md).
 - **Honest about uncertainty.** Every value is labeled measured, derived, estimated or illustrative, and the UI never presents a guess as a measurement. See [Data sources](docs/DATA_SOURCES.md).
@@ -33,19 +36,27 @@ Version 0.7.0 · C++20 · OpenGL 3.3 · [MIT License](LICENSE) · [Changelog](CH
 | Area | What was built | Evidence |
 |---|---|---|
 | Propagation | Kepler solver with sign-aware Newton start and a guaranteed bisection fallback; J2000 heliocentric-ecliptic ephemeris | KEP-1…6, EPH-1…6 |
-| Mission analysis | Launch-window root-finding on real, eccentric orbits; patched-conic Δv; synodic periods | MIS-1…7 |
+| Mission analysis | Universal-variable Lambert solver; porkchop grids; launch-window search; patched-conic gravity-assist optimizer with SOI transitions | LAM-1…19, GA-1…15, MIS-1…7 |
+| Ephemeris validation | Standish elements with secular rates; error envelopes vs. JPL Horizons DE441, 1950–2050 | EPH-H0…17 |
+| Software architecture | `SimulationState` changed only through `Command`s; recorded-input replay with state hashes; core library without GL; config file and structured JSON-lines logging | ENG-1…19 |
 | Data engineering | Four-source ingestion (Python and C++ tools), type-safe parsing, graceful degradation, positional cross-match of 150k double stars in under 0.5 s | DAT-1…5, [Architecture → Performance](docs/ARCHITECTURE.md#performance) |
 | Astrometry | Equatorial→ecliptic frame alignment; parallax re-projection of the sky from other stars; linear proper motion from epoch J1991.25 | [Architecture → Frames](docs/ARCHITECTURE.md#time-systems-and-reference-frames) |
 | Flight software patterns | Fixed-rate GNC loop (100 Hz physics, 20 Hz guidance, zero-order hold), phase sequencer, ZEM/ZEV guidance, limit monitors, deterministic fixed-tick clock, telemetry export | FSW-1…24 |
-| Rendering | GL 3.3 renderer with procedural 3-D-noise surfaces, bump shading, real-radius ring bands, a point-sprite star catalog, and a CRT post-process | 13/13 shaders validated |
+| Astrometry at Galactic scale | IAU J2000 equatorial→Galactic transform; host-star positions from RA/Dec + distance | GAL-1…11 (matches the Archive's l, b to 1e-5°) |
+| Rendering | GL 3.3 renderer with procedural 3-D-noise surfaces, bump shading, real-radius ring bands, a point-sprite star catalog, point-cloud galaxy layers, and a CRT post-process | 15/15 shaders validated |
 
 ## Validation summary
 
 | Check | Result |
 |---|---|
 | Kepler invariants, e = 0 … 0.99 | Worst relative error ~1e-7 |
-| Mars / Jupiter / Saturn opposition times vs. published | 70 / 12 / 31 min |
-| 2026 equinox vs. published (precession-corrected) | 33 min |
+| Planet positions vs. JPL Horizons, 1950–2050 (max angle) | Mercury–Mars 18–77″; Jupiter/Saturn ~550″; Uranus/Neptune 58–110″ |
+| Mars / Jupiter / Saturn opposition times vs. published | 5 / 69 / 153 min |
+| 2026 equinox vs. published (precession-corrected) | 15 min |
+| Lambert solver vs. Curtis Example 5.2 | < 0.0001 km/s |
+| 2020 Mars window vs. Perseverance | Launch 2020-08-01 (real 07-30), 209 days (real 203) |
+| Voyager-era Earth–Jupiter–Saturn chain | Launch 1977-09-05 (Voyager 1: 09-05) |
+| Recorded session replay | Final state hash identical; tampered recording detected |
 | Hohmann time and Δv vs. closed form | Exact to reported precision |
 | Planned trajectory end point vs. target | < 2e-11 AU |
 | Malformed / missing / mistyped input | Handled without crashing |
@@ -105,7 +116,7 @@ Requirements: Windows 10/11 x64 with OpenGL 3.3.
 cmake --preset windows-portable
 cmake --build --preset windows-portable
 ctest --preset windows-portable
-cd build\windows-portable; cpack -C Release   # -> ExoSim-0.7.0-win64.zip
+cd build\windows-portable; cpack -C Release   # -> ExoSim-0.8.0-win64.zip
 ```
 The first configure builds every dependency statically, so it's slow once.
 
@@ -119,11 +130,36 @@ console states which one.
 - **Plan a mission (Sol):** in the Mission Planner, choose a vehicle and destination, then "Plan next launch window". This shows the launch and arrival dates, transfer time, Δv, arrival speed and window cadence. "Jump to launch" plays the trajectory.
 - **Fly the mission:** the Flight Director window shows mission elapsed time, phase, the next event, live telemetry and the sequence of events. Click the rocket (or "Follow spacecraft") to ride along. Time warp runs from 1× (real time) to 10 days/s; with "warp to events" on, the clock stops at launch and again at the start of the landing.
 - **Watch the landing:** at arrival (or with "Skip ahead to the landing") the Landing view opens. It plays entry, parachutes and powered descent in real time, with telemetry, strip charts and limit monitors. Drag to orbit the chase camera; scroll to zoom. Both windows can export telemetry as CSV.
+- **Trajectory design:** "Porkchop plot" maps transfer cost over launch and arrival dates; click any cell to fly that transfer. "Gravity assists" plans Earth–Jupiter–Saturn and other flyby chains, with sphere-of-influence entry and exit on the timeline.
+- **Milky Way map:** "Milky Way map" in the control window. Scroll to zoom at the cursor (1 pc to 80 kpc); drag to pan (2-D) or orbit (3-D); right-drag pans in both. Search for a host star, click one to see its distance and Galactic coordinates, and "Open system" to fly there.
+- **Record and replay:** "Record" in the Session window saves your inputs to `recordings/`; run with `--replay <file>` to watch it again, or `--verify-replay <file>` to check headlessly that it reproduces the same final state.
+- **Settings:** copy `exosim.example.json` to `exosim.json` next to the exe to set the window size, data and output folders, default speed and logging. Unknown keys or bad values are reported and ignored.
 - **Controls:** simulation speed and date ("Today" resets it), logarithmic distance scaling, star-size exaggeration, and a sky-epoch slider that shows stellar proper motion over ±100,000 years.
 
 ## Demo
 
-Screenshots from the Windows build (v0.6.0) and the scenario mode (v0.7.0). A demo video is still to come.
+Screenshots from the Windows build (v0.6.0) and the deterministic screenshot mode (v0.7.0, v0.8.0). A demo video is still to come.
+
+### The Milky Way map (0.8)
+
+![Milky Way map, whole Galaxy](docs/images/galaxy_overview.png)
+
+*The whole Galaxy, top-down, Galactic Center up. The orange points are
+real exoplanet hosts. The streak from the Sun toward the bulge is the
+microlensing surveys, and the plume toward l ≈ 76° is Kepler's field. The
+disk, bar and arms are an illustrative model (labeled in the app).*
+
+![Milky Way map, solar neighborhood](docs/images/galaxy_neighborhood.png)
+
+*Zoomed to the solar neighborhood (10 pc ring): every labeled star has
+known planets.*
+
+### Porkchop plot (0.8)
+
+![Earth to Mars porkchop plot](docs/images/porkchop_mars.png)
+
+*Earth→Mars transfer cost over launch and arrival dates, with Type I and
+Type II lobes. The optimum for the 2026 window is marked.*
 
 ### Mission planning: Earth to Mars
 
@@ -206,9 +242,11 @@ groups everything into 2,472 star systems.*
 
 `.github/workflows/build-and-release.yml` runs on every push and pull request:
 
-1. **Linux:** the validation suite, the same suite under ASan + UBSan, and
+1. **Static analysis:** clang-format check and clang-tidy (warnings as
+   errors) over the core and tests.
+2. **Linux:** the validation suite, the same suite under ASan + UBSan, and
    GLSL validation of every shader.
-2. **Windows** (only if Linux passes):
+3. **Windows** (only if both pass):
    - builds the portable exe and runs the tests;
    - packages the zip (including `LICENSE`);
    - fails if the exe depends on any non-system DLL;
@@ -226,26 +264,24 @@ that CHANGELOG section. `0.x` versions are marked as pre-releases.
 
 ## Known limitations
 
-- **Two-body motion** only, with Standish elements held fixed. Accuracy is excellent near 2024–2026 but unmeasured for distant eras.
-- **Hohmann transfers are an idealization.** There are no gravity assists, so outer-planet times far exceed real missions (Voyager 2 reached Neptune in ~12 yr, where Hohmann takes ~30). The transfer is computed in the ecliptic plane. Capture is a single impulsive burn, and it is not modeled for moons of other planets.
+- **Two-body planets.** Standish's elements with secular rates are good to ~20–80″ for the inner planets over 1950–2050, but Jupiter and Saturn stay at ~550″ because their mutual perturbation isn't modeled. The table is valid only for 1800–2050.
+- **Patched conics.** Transfers and flybys are impulsive and two-body within each sphere of influence. That's enough to find real launch dates, but C3 values match real missions only to ~15–30%. There are no deep-space maneuvers, and the moon tour after arrival at a giant planet is a placeholder.
 - **The landing simulation is simplified.**
   - Physics: 2-D point mass on a non-rotating sphere, with no winds and no terrain relief.
   - Entry: ballistic, or full lift-up on Mars, not guided bank-angle control.
   - Vehicles: parameters are representative of a class, not exact.
-  - Moon targets: the tour from arrival at the parent planet to the moon is a placeholder.
 - **Exoplanet orbital phases are unknown.** Orbit shapes and periods are real; positions along the orbit are not.
-- **No session replay yet.** The clock is now fixed-tick and the landing is deterministic, but user inputs aren't recorded, so a whole session can't be replayed (see [Requirements](docs/REQUIREMENTS.md), ENG-4).
+- **The Milky Way model is illustrative.** Host positions are real; the disk, bar, bulge and arms are a smooth model fitted to measured arm crossings, and the far side of the Galaxy is poorly known. 107 hosts (2%) have no distance in the Archive's default parameter set. The latest fetch script recovers most of them from the `stellarhosts` table.
 - **Not flight software.** See [Requirements → Out of scope](docs/REQUIREMENTS.md#out-of-scope).
 
 ## Roadmap
 
-Priorities favor mission-analysis depth and engineering rigor over more visuals.
+The 0.7 roadmap (Lambert and porkchop plots, Horizons validation, replay and the `main.cpp` refactor, static analysis/config/logging, and gravity-assist chains) shipped in 0.8. Next, still favoring mission-analysis depth and engineering rigor:
 
-1. **Lambert solver and porkchop plots.** Arbitrary-date transfers, and launch/arrival Δv contour maps.
-2. **JPL Horizons validation.** Position error envelopes over 1950–2050.
-3. **Recorded-input replay** on top of the fixed-tick clock, plus a refactor of `main.cpp` into testable state and UI units (see [Architecture → Coupling](docs/ARCHITECTURE.md#coupling-and-what-id-refactor-first)).
-4. **Static analysis in CI** (clang-tidy, clang-format checks), plus a configuration file and structured logging.
-5. **Gravity-assist chains** with sphere-of-influence transitions.
+1. **N-body ephemeris option.** Integrate the planets (or read DE440 directly) to remove the ~550″ Jupiter/Saturn limit.
+2. **Deep-space maneuvers and launch-period analysis.** Multiple-shooting optimization on gravity-assist legs; launch period vs. C3 budget.
+3. **MSVC in CI**, with tests and clang-tidy on Windows.
+4. **Gaia DR3 distances** for host stars, with distance error bars on the Milky Way map.
 
 ## Documentation
 

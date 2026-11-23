@@ -8,9 +8,8 @@ StarClassification StarClassifier::Classify(double teffK, double radiusSolar, co
 
     if (teffK <= 0.0) {
         c.hasMeasuredTeff = false;
-        c.spectralClass = archiveSpectralType.empty()
-            ? "Unknown spectral type"
-            : ("Unclassified (archive spectral type: " + archiveSpectralType + ")");
+        c.spectralClass = archiveSpectralType.empty() ? "Unknown spectral type"
+                                                      : ("Unclassified (archive spectral type: " + archiveSpectralType + ")");
         c.color = glm::vec3(0.75f, 0.75f, 0.8f); // neutral pale color when we genuinely don't know
         return c;
     }

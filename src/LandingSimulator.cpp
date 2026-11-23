@@ -18,7 +18,10 @@ struct V2 {
     double len() const { return std::sqrt(x * x + y * y); }
     double dot(const V2& o) const { return x * o.x + y * o.y; }
 };
-V2 normalize(const V2& v) { double l = v.len(); return l > 0.0 ? v * (1.0 / l) : V2{0.0, 1.0}; }
+V2 normalize(const V2& v) {
+    double l = v.len();
+    return l > 0.0 ? v * (1.0 / l) : V2{0.0, 1.0};
+}
 
 // Vehicle class parameters. Values are representative of the named class
 // (public mission documentation), rounded; see LandingSimulator.h.
@@ -32,8 +35,8 @@ struct Profile {
     bool hasChute = false;
     double chuteDeploySpeedMs = 0.0, chuteCdA = 0.0, chuteInflateS = 2.0;
     double heatShieldMassKg = 0.0, heatShieldJettisonDelayS = 20.0, postShieldCdA = 0.0; // 0 = drag area unchanged
-    double chuteJettisonAltM = -1.0, postChuteCdA = 0.0;   // Venus: chute released high, drag disk below
-    double drogueSwapDelayS = -1.0, drogueCdA = 0.0;       // Titan: main chute swapped for a smaller drogue
+    double chuteJettisonAltM = -1.0, postChuteCdA = 0.0; // Venus: chute released high, drag disk below
+    double drogueSwapDelayS = -1.0, drogueCdA = 0.0; // Titan: main chute swapped for a smaller drogue
     // Powered descent
     double poweredStartAltM = 0.0, backshellMassKg = 0.0, landerCdA = 0.0;
     double ispS = 0.0, propellantKg = 0.0, maxThrustN = 0.0;
@@ -51,42 +54,91 @@ Profile makeProfile(const BodyConstants& b, double vInfKms, std::string& why) {
     auto entrySpeed = [&](double alt) { return std::sqrt(vInfKms * 1000.0 * vInfKms * 1000.0 + 2.0 * mu / (R + alt)); };
     const std::string n = b.name;
 
-    if (!b.hasSolidSurface) { why = n + " has no solid surface - the mission ends at orbit insertion."; return p; }
+    if (!b.hasSolidSurface) {
+        why = n + " has no solid surface - the mission ends at orbit insertion.";
+        return p;
+    }
 
     if (n == "Mars") {
         p.name = "Mars EDL (Perseverance-class)";
         p.entry = p.powered = p.hasChute = true;
-        p.entryMassKg = 3440.0; p.capsuleCdA = 1.68 * kPi * 2.25 * 2.25; p.noseRadiusM = 1.125;
-        p.liftToDrag = 0.24; p.suttonGravesK = 1.9027e-4;
-        p.entryAltM = entryInterface(1e-7); p.entrySpeedMs = entrySpeed(p.entryAltM); p.gammaDeg = -15.5;
-        p.chuteDeploySpeedMs = 420.0; p.chuteCdA = 0.62 * kPi * 10.75 * 10.75;
-        p.heatShieldMassKg = 440.0; p.heatShieldJettisonDelayS = 20.0;
-        p.poweredStartAltM = 2100.0; p.backshellMassKg = 900.0; p.landerCdA = 1.0 * 6.0;
-        p.ispS = 225.0; p.propellantKg = 400.0; p.maxThrustN = 8 * 3100.0;
-        p.gateAltM = 20.0; p.gateDescentMs = 1.5; p.touchdownDescentMs = 0.75;
-        p.gYellow = 15; p.gRed = 20; p.heatYellow = 180; p.heatRed = 240; p.tdYellow = 1.5; p.tdRed = 3.0;
+        p.entryMassKg = 3440.0;
+        p.capsuleCdA = 1.68 * kPi * 2.25 * 2.25;
+        p.noseRadiusM = 1.125;
+        p.liftToDrag = 0.24;
+        p.suttonGravesK = 1.9027e-4;
+        p.entryAltM = entryInterface(1e-7);
+        p.entrySpeedMs = entrySpeed(p.entryAltM);
+        p.gammaDeg = -15.5;
+        p.chuteDeploySpeedMs = 420.0;
+        p.chuteCdA = 0.62 * kPi * 10.75 * 10.75;
+        p.heatShieldMassKg = 440.0;
+        p.heatShieldJettisonDelayS = 20.0;
+        p.poweredStartAltM = 2100.0;
+        p.backshellMassKg = 900.0;
+        p.landerCdA = 1.0 * 6.0;
+        p.ispS = 225.0;
+        p.propellantKg = 400.0;
+        p.maxThrustN = 8 * 3100.0;
+        p.gateAltM = 20.0;
+        p.gateDescentMs = 1.5;
+        p.touchdownDescentMs = 0.75;
+        p.gYellow = 15;
+        p.gRed = 20;
+        p.heatYellow = 180;
+        p.heatRed = 240;
+        p.tdYellow = 1.5;
+        p.tdRed = 3.0;
     } else if (n == "Venus") {
         p.name = "Venus descent probe (Venera-class)";
         p.entry = p.hasChute = true;
-        p.entryMassKg = 1560.0; p.capsuleCdA = 1.05 * kPi * 1.2 * 1.2; p.noseRadiusM = 1.2; p.suttonGravesK = 1.9027e-4;
-        p.entryAltM = 200000.0; p.entrySpeedMs = entrySpeed(p.entryAltM); p.gammaDeg = -20.0;
-        p.chuteDeploySpeedMs = 250.0; p.chuteCdA = 0.6 * kPi * 6.0 * 6.0;
-        p.heatShieldMassKg = 900.0; p.heatShieldJettisonDelayS = 10.0; p.postShieldCdA = 0.5 * kPi; // aeroshell release leaves a ~660 kg, 2 m lander
-        p.chuteJettisonAltM = 50000.0; p.postChuteCdA = 1.2 * kPi * 1.05 * 1.05 + 1.0; // drag-disk free fall
-        p.gYellow = 300; p.gRed = 450; p.heatYellow = 4000; p.heatRed = 6000; p.tdYellow = 8.0; p.tdRed = 12.0;
+        p.entryMassKg = 1560.0;
+        p.capsuleCdA = 1.05 * kPi * 1.2 * 1.2;
+        p.noseRadiusM = 1.2;
+        p.suttonGravesK = 1.9027e-4;
+        p.entryAltM = 200000.0;
+        p.entrySpeedMs = entrySpeed(p.entryAltM);
+        p.gammaDeg = -20.0;
+        p.chuteDeploySpeedMs = 250.0;
+        p.chuteCdA = 0.6 * kPi * 6.0 * 6.0;
+        p.heatShieldMassKg = 900.0;
+        p.heatShieldJettisonDelayS = 10.0;
+        p.postShieldCdA = 0.5 * kPi; // aeroshell release leaves a ~660 kg, 2 m lander
+        p.chuteJettisonAltM = 50000.0;
+        p.postChuteCdA = 1.2 * kPi * 1.05 * 1.05 + 1.0; // drag-disk free fall
+        p.gYellow = 300;
+        p.gRed = 450;
+        p.heatYellow = 4000;
+        p.heatRed = 6000;
+        p.tdYellow = 8.0;
+        p.tdRed = 12.0;
     } else if (n == "Titan") {
         p.name = "Titan descent probe (Huygens-class)";
         p.entry = p.hasChute = true;
-        p.entryMassKg = 319.0; p.capsuleCdA = 1.5 * kPi * 1.35 * 1.35; p.noseRadiusM = 1.25;
+        p.entryMassKg = 319.0;
+        p.capsuleCdA = 1.5 * kPi * 1.35 * 1.35;
+        p.noseRadiusM = 1.25;
         // Huygens' measured entry state (ESA): 1270 km, ~6.0 km/s, -65 deg.
         // Used instead of an approach v-infinity: the Saturn -> Titan leg isn't modeled.
-        p.entryAltM = 1270000.0; p.entrySpeedMs = 6000.0; p.gammaDeg = -65.0;
-        p.chuteDeploySpeedMs = 400.0; p.chuteCdA = 0.6 * kPi * 4.15 * 4.15;
-        p.heatShieldMassKg = 100.0; p.heatShieldJettisonDelayS = 30.0; p.postShieldCdA = 1.0 * kPi * 0.65 * 0.65;
-        p.drogueSwapDelayS = 15.0 * 60.0; p.drogueCdA = 0.6 * kPi * 1.515 * 1.515;
-        p.gYellow = 20; p.gRed = 25; p.heatYellow = 150; p.heatRed = 200; p.tdYellow = 6.0; p.tdRed = 10.0;
+        p.entryAltM = 1270000.0;
+        p.entrySpeedMs = 6000.0;
+        p.gammaDeg = -65.0;
+        p.chuteDeploySpeedMs = 400.0;
+        p.chuteCdA = 0.6 * kPi * 4.15 * 4.15;
+        p.heatShieldMassKg = 100.0;
+        p.heatShieldJettisonDelayS = 30.0;
+        p.postShieldCdA = 1.0 * kPi * 0.65 * 0.65;
+        p.drogueSwapDelayS = 15.0 * 60.0;
+        p.drogueCdA = 0.6 * kPi * 1.515 * 1.515;
+        p.gYellow = 20;
+        p.gRed = 25;
+        p.heatYellow = 150;
+        p.heatRed = 200;
+        p.tdYellow = 6.0;
+        p.tdRed = 10.0;
     } else if (b.hasAtmosphere()) {
-        why = "No descent profile for " + n + "'s atmosphere."; return p;
+        why = "No descent profile for " + n + "'s atmosphere.";
+        return p;
     } else {
         // Airless body: powered descent from a low circular orbit (Apollo
         // started powered descent from ~15 km). Small bodies start at half
@@ -102,8 +154,13 @@ Profile makeProfile(const BodyConstants& b, double vInfKms, std::string& why) {
         p.propellantKg = dryKg * (std::exp(dvBudget / (p.ispS * kG0)) - 1.0);
         p.entryMassKg = dryKg + p.propellantKg;
         p.maxThrustN = std::max(2.5 * g, 3.0) * p.entryMassKg;
-        p.gateAltM = 30.0; p.gateDescentMs = 1.5; p.touchdownDescentMs = 0.9;
-        p.gYellow = 1.2; p.gRed = 2.0; p.tdYellow = 1.5; p.tdRed = 3.0;
+        p.gateAltM = 30.0;
+        p.gateDescentMs = 1.5;
+        p.touchdownDescentMs = 0.9;
+        p.gYellow = 1.2;
+        p.gRed = 2.0;
+        p.tdYellow = 1.5;
+        p.tdRed = 3.0;
     }
     return p;
 }
@@ -134,7 +191,10 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
     LandingResult res;
     res.bodyName = cfg.bodyName;
     const BodyConstants* body = Bodies::Lookup(cfg.bodyName);
-    if (!body) { res.message = "No physical data for " + cfg.bodyName + " - landing not simulated."; return res; }
+    if (!body) {
+        res.message = "No physical data for " + cfg.bodyName + " - landing not simulated.";
+        return res;
+    }
 
     Profile pf = makeProfile(*body, cfg.approachVinfKms, res.message);
     if (pf.name.empty()) return res;
@@ -148,7 +208,10 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
 
     // --- Initial state (planet-centred plane; downrange angle measured from +y) ---
     auto radial = [](const V2& r) { return normalize(r); };
-    auto tangential = [](const V2& r) { V2 u = normalize(r); return V2{u.y, -u.x}; }; // direction of increasing angle
+    auto tangential = [](const V2& r) {
+        V2 u = normalize(r);
+        return V2{u.y, -u.x};
+    }; // direction of increasing angle
 
     V2 r{0.0, R + (pf.entry ? pf.entryAltM : pf.startAltM)};
     V2 v;
@@ -174,9 +237,9 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
     DescentPhase phase = pf.entry ? DescentPhase::Entry : DescentPhase::PoweredDescent;
 
     // Guidance state
-    double tgoEnd = 0.0;     // absolute time at which the guidance gate is due
+    double tgoEnd = 0.0; // absolute time at which the guidance gate is due
     double targetAngle = 0.0;
-    V2 thrustCmd;            // commanded thrust acceleration (world), held between guidance cycles
+    V2 thrustCmd; // commanded thrust acceleration (world), held between guidance cycles
     double throttle = 0.0;
 
     const double dt = 1.0 / kPhysicsHz;
@@ -200,8 +263,8 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
         double ang = std::atan2(r.x, r.y);
         targetAngle = ang + (0.5 * vh * tgo) / R;
         res.targetAngleRad = targetAngle;
-        std::snprintf(buf, sizeof(buf), "Guidance: ZEM/ZEV target set %.1f km downrange, tgo %.0f s",
-                      0.5 * vh * tgo / 1000.0, tgo);
+        std::snprintf(buf, sizeof(buf), "Guidance: ZEM/ZEV target set %.1f km downrange, tgo %.0f s", 0.5 * vh * tgo / 1000.0,
+                      tgo);
         log(buf);
     };
 
@@ -244,30 +307,39 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
 
         // ---------------- Sequencer (phase transitions) ----------------
         if (phase == DescentPhase::Entry && pf.hasChute && speed < pf.chuteDeploySpeedMs && vv < 0.0 && t > 1.0) {
-            chute = true; chuteDeployT = t; phase = DescentPhase::Parachute;
+            chute = true;
+            chuteDeployT = t;
+            phase = DescentPhase::Parachute;
             std::snprintf(buf, sizeof(buf), "Parachute deploy at %.1f km altitude, %.0f m/s", h / 1000.0, speed);
             log(buf);
         }
         if (chute && heatShield && t >= chuteDeployT + pf.heatShieldJettisonDelayS) {
-            heatShield = false; mass -= pf.heatShieldMassKg;
+            heatShield = false;
+            mass -= pf.heatShieldMassKg;
             if (pf.postShieldCdA > 0.0) capsuleCdA = pf.postShieldCdA;
             std::snprintf(buf, sizeof(buf), "Heat shield jettison at %.1f km", h / 1000.0);
             log(buf);
         }
         if (chute && pf.drogueSwapDelayS > 0.0 && !drogueSwapped && t >= chuteDeployT + pf.drogueSwapDelayS) {
-            drogueSwapped = true; chuteCdA = pf.drogueCdA;
+            drogueSwapped = true;
+            chuteCdA = pf.drogueCdA;
             std::snprintf(buf, sizeof(buf), "Main parachute released, drogue chute deployed at %.1f km", h / 1000.0);
             log(buf);
         }
         if (chute && pf.chuteJettisonAltM > 0.0 && h < pf.chuteJettisonAltM) {
-            chute = false; capsuleCdA = pf.postChuteCdA;
+            chute = false;
+            capsuleCdA = pf.postChuteCdA;
             std::snprintf(buf, sizeof(buf), "Parachute released at %.1f km - free fall on drag disk", h / 1000.0);
             log(buf);
         }
         if (phase == DescentPhase::Parachute && pf.powered && h < pf.poweredStartAltM) {
-            chute = false; heatShield = false; mass -= pf.backshellMassKg; capsuleCdA = pf.landerCdA;
+            chute = false;
+            heatShield = false;
+            mass -= pf.backshellMassKg;
+            capsuleCdA = pf.landerCdA;
             phase = DescentPhase::PoweredDescent;
-            std::snprintf(buf, sizeof(buf), "Backshell separation, descent engines ignite at %.2f km, %.0f m/s", h / 1000.0, speed);
+            std::snprintf(buf, sizeof(buf), "Backshell separation, descent engines ignite at %.2f km, %.0f m/s", h / 1000.0,
+                          speed);
             log(buf);
             startPoweredGuidance();
         }
@@ -313,14 +385,30 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
 
         if (t >= nextSample) {
             LandingSample s;
-            s.t = t; s.altitudeM = h; s.angleRad = std::atan2(r.x, r.y); s.downrangeM = s.angleRad * R;
-            s.speedMs = speed; s.verticalMs = vv; s.horizontalMs = vh; s.accelG = sensedG;
-            s.dynPressurePa = q; s.heatFluxWcm2 = heat; s.massKg = mass; s.propellantKg = prop; s.throttle = throttle;
+            s.t = t;
+            s.altitudeM = h;
+            s.angleRad = std::atan2(r.x, r.y);
+            s.downrangeM = s.angleRad * R;
+            s.speedMs = speed;
+            s.verticalMs = vv;
+            s.horizontalMs = vh;
+            s.accelG = sensedG;
+            s.dynPressurePa = q;
+            s.heatFluxWcm2 = heat;
+            s.massKg = mass;
+            s.propellantKg = prop;
+            s.throttle = throttle;
             double tl = thrustCmd.len();
-            if (tl > 0.0) { s.thrustDirX = thrustCmd.dot(hz) / tl; s.thrustDirY = thrustCmd.dot(up) / tl; }
+            if (tl > 0.0) {
+                s.thrustDirX = thrustCmd.dot(hz) / tl;
+                s.thrustDirY = thrustCmd.dot(up) / tl;
+            }
             s.rangeToTargetM = pf.powered && phase != DescentPhase::Entry && phase != DescentPhase::Parachute
-                             ? std::fabs(targetAngle - s.angleRad) * R : 0.0;
-            s.phase = phase; s.chuteDeployed = chute; s.heatShieldAttached = heatShield;
+                                   ? std::fabs(targetAngle - s.angleRad) * R
+                                   : 0.0;
+            s.phase = phase;
+            s.chuteDeployed = chute;
+            s.heatShieldAttached = heatShield;
             res.samples.push_back(s);
             nextSample += kSampleInterval;
         }
@@ -332,38 +420,55 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
             phase = res.landed ? DescentPhase::Landed : DescentPhase::Crashed;
             double ang = std::atan2(r.x, r.y);
             res.missDistanceM = pf.powered ? std::fabs(targetAngle - ang) * R : 0.0;
-            std::snprintf(buf, sizeof(buf), res.landed ? "TOUCHDOWN at %.2f m/s - %.0f km downrange of entry"
-                                                       : "SURFACE IMPACT at %.1f m/s - %.0f km downrange",
+            std::snprintf(buf, sizeof(buf),
+                          res.landed ? "TOUCHDOWN at %.2f m/s - %.0f km downrange of entry"
+                                     : "SURFACE IMPACT at %.1f m/s - %.0f km downrange",
                           speed, ang * R / 1000.0);
             log(buf);
             LandingSample s = res.samples.empty() ? LandingSample{} : res.samples.back();
-            s.t = t; s.altitudeM = 0.0; s.angleRad = ang; s.downrangeM = ang * R; s.speedMs = 0.0;
-            s.verticalMs = s.horizontalMs = 0.0; s.accelG = 0.0; s.throttle = 0.0; s.dynPressurePa = 0.0; s.heatFluxWcm2 = 0.0;
-            s.massKg = mass; s.propellantKg = prop; s.phase = phase; s.chuteDeployed = false; s.rangeToTargetM = res.missDistanceM;
+            s.t = t;
+            s.altitudeM = 0.0;
+            s.angleRad = ang;
+            s.downrangeM = ang * R;
+            s.speedMs = 0.0;
+            s.verticalMs = s.horizontalMs = 0.0;
+            s.accelG = 0.0;
+            s.throttle = 0.0;
+            s.dynPressurePa = 0.0;
+            s.heatFluxWcm2 = 0.0;
+            s.massKg = mass;
+            s.propellantKg = prop;
+            s.phase = phase;
+            s.chuteDeployed = false;
+            s.rangeToTargetM = res.missDistanceM;
             res.samples.push_back(s);
             break;
         }
 
         // ---------------- Integrate (RK4, thrust held constant over the step) ----------------
         auto f = [&](const V2& rr, const V2& vel) { return accel(rr, vel, mass, cda, thrustCmd); };
-        V2 k1v = f(r, v),                               k1r = v;
+        V2 k1v = f(r, v), k1r = v;
         V2 k2v = f(r + k1r * (dt / 2), v + k1v * (dt / 2)), k2r = v + k1v * (dt / 2);
         V2 k3v = f(r + k2r * (dt / 2), v + k2v * (dt / 2)), k3r = v + k2v * (dt / 2);
-        V2 k4v = f(r + k3r * dt, v + k3v * dt),           k4r = v + k3v * dt;
+        V2 k4v = f(r + k3r * dt, v + k3v * dt), k4r = v + k3v * dt;
         r = r + (k1r + k2r * 2.0 + k3r * 2.0 + k4r) * (dt / 6.0);
         v = v + (k1v + k2v * 2.0 + k3v * 2.0 + k4v) * (dt / 6.0);
 
         double thrustN = thrustCmd.len() * mass;
         if (thrustN > 0.0 && pf.ispS > 0.0) {
             double burned = std::min(prop, thrustN / (pf.ispS * kG0) * dt);
-            prop -= burned; mass -= burned;
+            prop -= burned;
+            mass -= burned;
             if (prop <= 0.0 && burned > 0.0) log("PROPELLANT DEPLETED");
         }
         t += dt;
         ++step;
     }
 
-    if (t >= kMaxT) { res.message = "Simulation timed out before touchdown."; return res; }
+    if (t >= kMaxT) {
+        res.message = "Simulation timed out before touchdown.";
+        return res;
+    }
 
     res.durationS = t;
     res.propellantUsedKg = res.propellantInitialKg - prop;
@@ -371,7 +476,8 @@ LandingResult LandingSimulator::Run(const LandingConfig& cfg) {
 
     // ---------------- Limit checks (illustrative design limits for the vehicle class) ----------------
     res.limits.push_back(limit("Peak sensed load", "g", res.peakG, pf.gYellow, pf.gRed));
-    if (pf.entry) res.limits.push_back(limit("Peak heat flux (Sutton-Graves)", "W/cm2", res.peakHeatFluxWcm2, pf.heatYellow, pf.heatRed));
+    if (pf.entry)
+        res.limits.push_back(limit("Peak heat flux (Sutton-Graves)", "W/cm2", res.peakHeatFluxWcm2, pf.heatYellow, pf.heatRed));
     res.limits.push_back(limit("Touchdown speed", "m/s", res.touchdownSpeedMs, pf.tdYellow, pf.tdRed));
     if (pf.powered) {
         double margin = res.propellantInitialKg > 0.0 ? 100.0 * prop / res.propellantInitialKg : 0.0;
@@ -385,8 +491,7 @@ LandingSample LandingSimulator::At(const LandingResult& r, double t) {
     if (r.samples.empty()) return {};
     if (t <= r.samples.front().t) return r.samples.front();
     if (t >= r.samples.back().t) return r.samples.back();
-    auto it = std::upper_bound(r.samples.begin(), r.samples.end(), t,
-                               [](double tv, const LandingSample& s) { return tv < s.t; });
+    auto it = std::upper_bound(r.samples.begin(), r.samples.end(), t, [](double tv, const LandingSample& s) { return tv < s.t; });
     const LandingSample& b = *it;
     const LandingSample& a = *(it - 1);
     double u = (b.t > a.t) ? (t - a.t) / (b.t - a.t) : 0.0;
@@ -418,10 +523,10 @@ bool LandingSimulator::WriteCsv(const LandingResult& r, const std::string& path)
            "heat_flux_wcm2,mass_kg,propellant_kg,throttle,range_to_target_m,chute,heat_shield\n";
     char line[512];
     for (const auto& s : r.samples) {
-        std::snprintf(line, sizeof(line), "%.2f,%s,%.2f,%.2f,%.3f,%.3f,%.3f,%.4f,%.2f,%.3f,%.2f,%.3f,%.4f,%.2f,%d,%d\n",
-                      s.t, DescentPhaseName(s.phase), s.altitudeM, s.downrangeM, s.speedMs, s.verticalMs, s.horizontalMs,
-                      s.accelG, s.dynPressurePa, s.heatFluxWcm2, s.massKg, s.propellantKg, s.throttle,
-                      s.rangeToTargetM, s.chuteDeployed ? 1 : 0, s.heatShieldAttached ? 1 : 0);
+        std::snprintf(line, sizeof(line), "%.2f,%s,%.2f,%.2f,%.3f,%.3f,%.3f,%.4f,%.2f,%.3f,%.2f,%.3f,%.4f,%.2f,%d,%d\n", s.t,
+                      DescentPhaseName(s.phase), s.altitudeM, s.downrangeM, s.speedMs, s.verticalMs, s.horizontalMs, s.accelG,
+                      s.dynPressurePa, s.heatFluxWcm2, s.massKg, s.propellantKg, s.throttle, s.rangeToTargetM,
+                      s.chuteDeployed ? 1 : 0, s.heatShieldAttached ? 1 : 0);
         out << line;
     }
     return static_cast<bool>(out);

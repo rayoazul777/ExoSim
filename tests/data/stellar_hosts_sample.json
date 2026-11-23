@@ -1,0 +1,16 @@
+[
+ {
+  "hostname": "TRAPPIST-1",
+  "st_teff": 2566.0,
+  "sy_dist": null
+ },
+ {
+  "hostname": "TRAPPIST-1",
+  "st_teff": 2559.0,
+  "sy_dist": 12.4299
+ },
+ {
+  "hostname": "55 Cnc",
+  "sy_dist": 12.59
+ }
+]

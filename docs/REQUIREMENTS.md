@@ -15,7 +15,7 @@ marked, not omitted.
 |---|---|---|---|
 | ORB-1 | Propagate two-body orbits for 0 ≤ e < 1, conserving angular momentum and vis-viva energy to a relative error below 1e-5 | T: KEP-1…5 | Met (worst case ~1e-7 at e = 0.99) |
 | ORB-2 | Handle inclined orbits with correct 3-D orientation | T: KEP-6 | Met |
-| ORB-3 | Place Sol's planets from J2000 elements so published events for 2024–2026 are reproduced within 2 days | T: EPH-1…6 | Met (oppositions within 12–70 min) |
+| ORB-3 | Place Sol's planets from J2000 elements so published events for 2024–2026 are reproduced within 2 days | T: EPH-1…6 | Met (oppositions within 5–153 min) |
 | ORB-4 | Converge Kepler's equation for every mean anomaly, including near-parabolic orbits | T: KEP (e = 0.99); I: bisection fallback | Met |
 
 ## Mission planning
@@ -25,8 +25,10 @@ marked, not omitted.
 | MIS-R1 | Compute Hohmann transfer time and Δv from 200 km LEO, matching closed-form values | T: MIS-1, MIS-2 | Met |
 | MIS-R2 | Find the next launch window after a given date such that the trajectory reaches the target | T: MIS-4 (miss < 1e-4 AU) | Met |
 | MIS-R3 | Report windows as calendar dates | T: TIM-1…4 | Met |
-| MIS-R4 | State the model's idealizations (no gravity assists, ecliptic-plane transfer, no capture burn) in the UI | I, D | Met |
-| MIS-R5 | Support gravity-assist trajectories | — | **Not met** (roadmap) |
+| MIS-R4 | State the model's idealizations (patched conics, impulsive burns, two-body planets) in the UI | I, D | Met |
+| MIS-R5 | Support gravity-assist trajectories | T: GA-1…15 | Met (patched conics, powered flybys; Voyager- and New Horizons-era chains reproduced) |
+| MIS-R6 | Plan transfers between arbitrary dates (Lambert), 3-D, and show launch/arrival cost maps | T: LAM-1…19 | Met |
+| MIS-R7 | Quantify ephemeris error against an authoritative ephemeris over 1950–2050 | T: EPH-H0…17 (JPL Horizons DE441) | Met; envelopes in `VALIDATION.md` |
 
 ## Mission operations and landing
 
@@ -58,12 +60,22 @@ marked, not omitted.
 |---|---|---|---|
 | ENG-1 | Core modules build and test without a GPU | T: `ExoSimTests` | Met |
 | ENG-2 | No memory errors or undefined behavior in the core | T: suite under ASan + UBSan | Met (GCC) |
-| ENG-3 | All shaders compile under the GLSL reference compiler | T: `glslangValidator` | Met (13/13) |
-| ENG-4 | Deterministic, replayable simulation | T: FSW-14, FSW-19, FSW-20 | **Partially met**: fixed-tick clock independent of frame rate; the landing simulation is bit-for-bit reproducible. Recorded-input replay of whole sessions is not yet implemented |
+| ENG-3 | All shaders compile under the GLSL reference compiler | T: `glslangValidator` | Met (15/15) |
+| ENG-4 | Deterministic, replayable simulation | T: FSW-14, FSW-19, FSW-20, ENG-1…8 | Met: fixed-tick clock; bit-for-bit landing; whole sessions recorded (`--record`) and replayed (`--replay`), verified by state hash (`--verify-replay`) |
 | ENG-5 | Continuous integration on Windows and Linux | I: workflow file | Implemented. Linted (actionlint) and its pass/fail logic tested locally; **not yet run on GitHub** |
 | ENG-8 | A downloadable build runs on a clean Windows machine with no installs | T: CI dependency check + packaged `--selftest` | Implemented; verified end-to-end on Linux, Windows CI pending first run |
-| ENG-6 | Runtime configuration from a file rather than constants | — | **Not met** (roadmap) |
-| ENG-7 | Structured logging | — | **Not met**: plain console output today |
+| ENG-6 | Runtime configuration from a file rather than constants | T: ENG-16…18 | Met: `exosim.json` (unknown keys and bad values warn and fall back) |
+| ENG-7 | Structured logging | T: ENG-19 | Met: levels, components, typed fields; console + JSON-lines file |
+| ENG-9 | Static analysis and formatting enforced in CI | I: workflow `static-analysis` job | Met: clang-format-18 check and clang-tidy-18 (warnings as errors) over core and tests |
+| ENG-10 | Separate simulation state from UI so it can be tested | T: ENG group; I: `sim/` has no GL/ImGui includes | Met |
+
+## Milky Way map
+
+| ID | Requirement | Verif. | Status |
+|---|---|---|---|
+| GAL-R1 | Plot every exoplanet host with a measured distance at its real 3-D position | T: GAL-4, GAL-8…10 | Met (to within the Archive's distance errors) |
+| GAL-R2 | Convert equatorial to Galactic coordinates per the IAU J2000 definition | T: GAL-1…4 | Met (matches the Archive's glon/glat to ~1e-5°) |
+| GAL-R3 | Label the disk/arm/bar model as illustrative and keep it from standing in for real stars at close range | I, D; T: GAL-12…19 | Met (model fades out below ~2 kpc) |
 
 ## Out of scope
 

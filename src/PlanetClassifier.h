@@ -12,24 +12,17 @@
 // ice giant / gas giant), based on well-known radius-gap research.
 // Everything here is a statistical estimate, never a measurement,
 // and the UI must say so.
-enum class PlanetType {
-    Unknown,
-    Rocky,
-    SuperEarth,
-    MiniNeptune,
-    IceGiant,
-    GasGiant
-};
+enum class PlanetType { Unknown, Rocky, SuperEarth, MiniNeptune, IceGiant, GasGiant };
 
 struct PlanetClassification {
     PlanetType type = PlanetType::Unknown;
-    std::string typeLabel;            // e.g. "Gas giant"
-    std::string surfaceGuess;         // one line, hedged
-    std::string atmosphereGuess;      // one line, hedged
+    std::string typeLabel; // e.g. "Gas giant"
+    std::string surfaceGuess; // one line, hedged
+    std::string atmosphereGuess; // one line, hedged
     glm::vec3 displayColor{0.6f, 0.6f, 0.6f};
-    bool basedOnRadius = false;       // true = radius/density-based (more reliable), false = mass-only fallback
-    bool basedOnDensity = false;      // true = the higher-confidence density-based path was used
-    bool hasAnyPhysicalData = false;  // false = neither radius, density nor mass known
+    bool basedOnRadius = false; // true = radius/density-based (more reliable), false = mass-only fallback
+    bool basedOnDensity = false; // true = the higher-confidence density-based path was used
+    bool hasAnyPhysicalData = false; // false = neither radius, density nor mass known
 
     // A small, hand-curated set of exoplanets DO have real published
     // atmospheric detections (JWST/Hubble spectroscopy). When the planet
